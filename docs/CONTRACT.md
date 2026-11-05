@@ -161,7 +161,7 @@ Notification = { id, type: "NEW_ORDER"|"LOW_STOCK"|"ORDER_STATUS_CHANGED", title
                  targetUserId: string|null, actorUserId: string|null,
                  entityType: "ORDER"|"PRODUCT", entityId: string, createdAt, read: boolean }
 ```
-`title` ≤ 120, `message` ≤ 500. `targetUserId = null` ⇒ broadcast. `actorUserId` = quien provocó el evento (el frontend no muestra toast de eventos propios).
+`title` ≤ 120, `message` ≤ 500. **Idioma (decisión del orquestador tras revisión): `title` y `message` se escriben en español**, porque el frontend los pinta tal cual (como texto, nunca HTML); los mensajes de error de la API (`message` del §5) siguen en inglés y el frontend los traduce por `code`. No incluir datos personales del cliente: solo número corto de pedido, estado, SKU/nombre de producto. `targetUserId = null` ⇒ broadcast. `actorUserId` = quien provocó el evento (el frontend no muestra toast de eventos propios).
 
 | Método y ruta | Descripción |
 |---|---|

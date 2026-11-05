@@ -141,6 +141,27 @@ class SecurityApiTest extends AbstractApiTest {
                 .andExpect(status().isOk());
     }
 
+    // ---- /error (despacho de error del contenedor) ------------------------------------------------------------
+
+    @Test
+    void containerErrorDispatchIsAnsweredInTheCommonFormatEvenWithoutAToken() throws Exception {
+        mvc.perform(get("/error").with(request -> {
+                    request.setDispatcherType(jakarta.servlet.DispatcherType.ERROR);
+                    request.setAttribute(jakarta.servlet.RequestDispatcher.ERROR_STATUS_CODE, 404);
+                    request.setAttribute(jakarta.servlet.RequestDispatcher.ERROR_REQUEST_URI, "/api/orders/x");
+                    return request;
+                }))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.status").value(404))
+                .andExpect(jsonPath("$.code").value("NOT_FOUND"))
+                .andExpect(jsonPath("$.path").value("/api/orders/x"));
+    }
+
+    @Test
+    void errorPathCannotBeRequestedDirectlyWithoutAToken() throws Exception {
+        assertUnauthorizedInCommonFormat(mvc.perform(get("/error")), "/error");
+    }
+
     // ---- actuator ---------------------------------------------------------------------------------------------
 
     @Test

@@ -66,15 +66,34 @@ public class ApiExceptionHandler {
     }
 
     @ExceptionHandler({HttpMessageNotReadableException.class, MethodArgumentTypeMismatchException.class,
-            MissingServletRequestParameterException.class, HttpMediaTypeNotSupportedException.class,
-            HttpMediaTypeNotAcceptableException.class})
+            MissingServletRequestParameterException.class})
     ResponseEntity<ErrorResponse> handleMalformedRequest(Exception ex, HttpServletRequest request) {
         // Sin ecoar el valor recibido ni el mensaje del parser JSON.
         return build(HttpStatus.BAD_REQUEST, ErrorCode.VALIDATION_ERROR, "Malformed or invalid request", request,
                 null);
     }
 
-    @ExceptionHandler({NoResourceFoundException.class, HttpRequestMethodNotSupportedException.class})
+    /** Metodo HTTP no soportado: 405 con code VALIDATION_ERROR (igual que inventory, auth y notifications). */
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    ResponseEntity<ErrorResponse> handleMethodNotSupported(HttpRequestMethodNotSupportedException ex,
+                                                           HttpServletRequest request) {
+        ResponseEntity.BodyBuilder response = ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED);
+        if (ex.getSupportedHttpMethods() != null && !ex.getSupportedHttpMethods().isEmpty()) {
+            response.allow(ex.getSupportedHttpMethods().toArray(new org.springframework.http.HttpMethod[0]));
+        }
+        return response.body(ErrorResponse.of(HttpStatus.METHOD_NOT_ALLOWED.value(), ErrorCode.VALIDATION_ERROR,
+                HttpStatus.METHOD_NOT_ALLOWED.getReasonPhrase(), request.getRequestURI(), null));
+    }
+
+    /** 415 / 406 con code VALIDATION_ERROR, como el resto de servicios. */
+    @ExceptionHandler({HttpMediaTypeNotSupportedException.class, HttpMediaTypeNotAcceptableException.class})
+    ResponseEntity<ErrorResponse> handleMediaType(Exception ex, HttpServletRequest request) {
+        HttpStatus status = ex instanceof HttpMediaTypeNotSupportedException
+                ? HttpStatus.UNSUPPORTED_MEDIA_TYPE : HttpStatus.NOT_ACCEPTABLE;
+        return build(status, ErrorCode.VALIDATION_ERROR, status.getReasonPhrase(), request, null);
+    }
+
+    @ExceptionHandler(NoResourceFoundException.class)
     ResponseEntity<ErrorResponse> handleUnknownRoute(Exception ex, HttpServletRequest request) {
         return build(HttpStatus.NOT_FOUND, ErrorCode.NOT_FOUND, "Resource not found", request, null);
     }

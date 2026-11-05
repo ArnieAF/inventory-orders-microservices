@@ -214,11 +214,24 @@ class OrderQueryApiTest extends AbstractApiTest {
     }
 
     @Test
-    void unsupportedMethodOnOrderIsNotFoundInCommonFormat() throws Exception {
+    void unsupportedMethodIs405WithValidationErrorCodeInCommonFormat() throws Exception {
         UUID id = seedOrder(OrderStatus.PENDING);
         mvc.perform(authed(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete("/api/orders/" + id)))
-                .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.code").value("NOT_FOUND"));
+                .andExpect(status().isMethodNotAllowed())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header()
+                        .string("Allow", org.hamcrest.Matchers.containsString("GET")))
+                .andExpect(jsonPath("$.status").value(405))
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.path").value("/api/orders/" + id))
+                .andExpect(jsonPath("$.message").value("Method Not Allowed"));
         assertThat(orderCount()).isEqualTo(1);
+    }
+
+    @Test
+    void unknownRouteIs404NotFoundInCommonFormat() throws Exception {
+        mvc.perform(authed(get("/api/nothing-here")))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("NOT_FOUND"))
+                .andExpect(jsonPath("$.path").value("/api/nothing-here"));
     }
 }

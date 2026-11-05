@@ -1,0 +1,78 @@
+server:
+  port: 8083
+  shutdown: graceful
+  error:
+    include-message: never
+    include-binding-errors: never
+    include-stacktrace: never
+    include-exception: false
+    whitelabel:
+      enabled: false
+
+spring:
+  application:
+    name: order-service
+  lifecycle:
+    timeout-per-shutdown-phase: 15s
+  # La conexion (SPRING_DATASOURCE_URL / _USERNAME / _PASSWORD) llega solo por entorno: sin valores por defecto.
+  datasource:
+    hikari:
+      connection-timeout: 5000
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: none
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+  flyway:
+    enabled: true
+  jackson:
+    default-property-inclusion: always
+    serialization:
+      write-dates-as-timestamps: false
+    generator:
+      write-bigdecimal-as-plain: true
+    deserialization:
+      # 1.5 no debe aceptarse como entero ni "5" como numero.
+      accept-float-as-int: false
+    mapper:
+      allow-coercion-of-scalars: false
+  mvc:
+    problemdetails:
+      enabled: false
+
+management:
+  endpoints:
+    web:
+      discovery:
+        enabled: false # sin pagina /actuator con enlaces: solo existe /actuator/health
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+      show-components: never
+
+app:
+  jwt:
+    # JWT_SECRET (>= 32 caracteres) es obligatorio: sin valor por defecto, el arranque falla con mensaje claro.
+    secret: ${JWT_SECRET:}
+    issuer: ${JWT_ISSUER:micro-inventory}
+  internal:
+    # INTERNAL_API_KEY es obligatorio: sin valor por defecto.
+    api-key: ${INTERNAL_API_KEY:}
+  inventory:
+    base-url: ${INVENTORY_SERVICE_URL:http://inventory-service:8082}
+    connect-timeout-ms: 2000
+    read-timeout-ms: 5000
+  notifications:
+    base-url: ${NOTIFICATION_SERVICE_URL:http://notification-service:8084}
+    connect-timeout-ms: 2000
+    read-timeout-ms: 5000
+    async: true
+
+logging:
+  level:
+    root: INFO

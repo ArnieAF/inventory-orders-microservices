@@ -1,0 +1,12 @@
+# Artefactos de compilacion y archivos locales: no deben entrar al contexto de build
+target/
+.git
+.gitignore
+.idea/
+.vscode/
+*.iml
+*.log
+.env
+.env.*
+Dockerfile
+.dockerignore

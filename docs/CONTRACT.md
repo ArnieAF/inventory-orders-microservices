@@ -41,7 +41,7 @@ inventory-service / order-service ──REST /internal/*──► notification-s
 ## 3. Seguridad (decisiones cerradas)
 
 **JWT**
-- HS256 con `JWT_SECRET` (≥ 32 caracteres, del entorno; jamás en el repo). Claims: `iss`=`micro-inventory`, `sub`=UUID del usuario, `username`, `iat`, `exp` (por defecto 60 min, `JWT_EXPIRATION_MINUTES`). Sin refresh token (fuera del MVP).
+- HS256 con `JWT_SECRET` (≥ 32 caracteres, del entorno; jamás en el repo). Claims: `iss`=`micro-inventory`, `sub`=UUID del usuario, `username`, `iat`, `exp` (por defecto 60 min, `JWT_EXPIRATION_MINUTES`, rango válido 1–10080; el arranque falla fuera de rango). **Todos** los validadores (gateway, inventory, order, notification y `/me` de auth) exigen `exp`, `sub` e `iss` y toleran 60 s de desfase de reloj (valor por defecto de Spring). Sin refresh token (fuera del MVP).
 - El **gateway** valida el JWT antes de enrutar (rechaza temprano) y **cada servicio vuelve a validarlo** (Spring Security resource server, defensa en profundidad). El usuario actual sale de `sub`/`username` del token, nunca de headers del cliente.
 - Rutas públicas en el gateway: `POST /api/auth/register`, `POST /api/auth/login`, `GET /actuator/health`, `/ws/**` (el handshake de navegador no puede llevar `Authorization`; la autenticación se hace en el frame STOMP `CONNECT`, ver §7).
 - El gateway **elimina** de las peticiones entrantes los headers `X-Internal-Key`, `X-User-Id`, `X-Username` antes de reenviar.
@@ -89,7 +89,7 @@ Tabla `users(id, username UNIQUE, email UNIQUE, password_hash, created_at)`; `us
 
 | Método y ruta | Body | Respuesta |
 |---|---|---|
-| `POST /api/auth/register` | `{username 3–32 [a-zA-Z0-9_.-], email ≤120, password 8–72}` | 201 `AuthResponse` |
+| `POST /api/auth/register` | `{username 3–32 [a-zA-Z0-9_.-], email ≤120 solo ASCII imprimible (se valida también tras pasar a minúsculas), password 8–72 **bytes UTF-8** (límite real de BCrypt; el frontend debe medir bytes, no caracteres)}` | 201 `AuthResponse` |
 | `POST /api/auth/login` | `{username, password}` | 200 `AuthResponse` |
 | `GET /api/auth/me` (JWT) | — | 200 `User` |
 

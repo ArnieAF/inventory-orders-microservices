@@ -1,0 +1,15 @@
+# Solo para pruebas: H2 en memoria en modo PostgreSQL + Flyway (sin Docker socket ni Testcontainers).
+# Los secretos de prueba se generan al azar en cada ejecucion (ver TestSecrets): no hay ninguno escrito aqui.
+spring:
+  datasource:
+    url: jdbc:h2:mem:inventory;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH;LOCK_TIMEOUT=15000;DB_CLOSE_DELAY=-1
+    username: sa
+    password: ""
+  jpa:
+    hibernate:
+      # En pruebas se valida que las entidades coinciden con la migracion Flyway.
+      ddl-auto: validate
+app:
+  notifications:
+    base-url: http://localhost:9
+    async: false

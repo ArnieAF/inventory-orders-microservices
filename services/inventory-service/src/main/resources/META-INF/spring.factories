@@ -1,0 +1,2 @@
+org.springframework.boot.env.EnvironmentPostProcessor=com.microinv.inventory.config.SecurityConfigurationPostProcessor
+org.springframework.boot.diagnostics.FailureAnalyzer=com.microinv.inventory.config.StartupConfigurationFailureAnalyzer

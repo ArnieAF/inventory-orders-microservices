@@ -79,6 +79,33 @@ class RestNotificationClientTest {
         }
     }
 
+    @ParameterizedTest
+    @CsvSource({"301", "302", "303", "307", "308"})
+    void redirectsAreNeverFollowedSoTheInternalKeyStaysOnTheConfiguredUrl(int status) throws Exception {
+        try (StubServer elsewhere = StubServer.start(r -> StubServer.Response.of(201, "{}"));
+                StubServer server = StubServer.start(
+                        r -> StubServer.Response.redirect(status, elsewhere.baseUrl() + "/internal/notifications"))) {
+            assertThatThrownBy(() -> new RestNotificationClient(server.baseUrl(), KEY, 2000, 5000).send(broadcast()))
+                    .isInstanceOf(RestNotificationClient.NotificationDeliveryException.class)
+                    .hasMessageContaining(String.valueOf(status));
+
+            assertThat(server.requests).hasSize(1);
+            assertThat(elsewhere.requests).isEmpty();
+        }
+    }
+
+    @Test
+    void spanishTextsTravelAsUtf8() throws Exception {
+        try (StubServer server = StubServer.start(r -> StubServer.Response.of(201, "{}"))) {
+            new RestNotificationClient(server.baseUrl(), KEY, 2000, 5000).send(new NotificationRequest(
+                    NotificationType.NEW_ORDER, "Nuevo pedido", "Se creó el pedido #ABCD1234", null, USER,
+                    "ORDER", ORDER));
+
+            JsonNode json = MAPPER.readTree(server.last().body());
+            assertThat(json.get("message").asText()).isEqualTo("Se creó el pedido #ABCD1234");
+        }
+    }
+
     @Test
     void connectionRefusedAndReadTimeoutRaiseExceptions() throws Exception {
         assertThatThrownBy(() -> new RestNotificationClient(StubServer.closedPortUrl(), KEY, 2000, 5000)

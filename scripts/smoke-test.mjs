@@ -163,6 +163,8 @@ async function main() {
   check('registro B = 201', B.reg.status === 201, B.reg.status);
   const dup = await api('POST', '/api/auth/register', { body: { username: A.username, email: `x_${A.email}`, password: A.password } });
   check('username duplicado = 409 USERNAME_TAKEN', dup.status === 409 && dup.json?.code === 'USERNAME_TAKEN', dup.json);
+  const nonAscii = await api('POST', '/api/auth/register', { body: { username: `smoke_u_${RUN}`, email: `İ${'a'.repeat(58)}@${'b'.repeat(56)}.com`, password: randomBytes(12).toString('base64url') } });
+  check('email no ASCII (con İ que crece al pasar a minúsculas) = 400, nunca 500', nonAscii.status === 400, nonAscii.status);
   const short = await api('POST', '/api/auth/register', { body: { username: 'ab', email: 'no-es-email', password: '123' } });
   check('registro inválido = 400 VALIDATION_ERROR', short.status === 400 && short.json?.code === 'VALIDATION_ERROR', short.json);
   const badLogin = await api('POST', '/api/auth/login', { body: { username: A.username, password: 'incorrecta-xyz' } });
@@ -196,6 +198,10 @@ async function main() {
   check('sort fuera de lista blanca = 400', badSort.status === 400, badSort.status);
   const adj = await api('POST', `/api/products/${p1.json.id}/stock-adjustments`, { token: tokA, body: { delta: -3, reason: 'smoke' } });
   check('ajuste -3 deja stock 7', adj.status === 200 && adj.json?.stock === 7, adj.json);
+  const hugeStock = await newProduct(tokA, 'HUGE', { stock: 1_000_000_001 });
+  check('stock inicial > 1.000.000.000 = 400 (límite del contrato)', hugeStock.status === 400, hugeStock.status);
+  const hugeDelta = await api('POST', `/api/products/${p1.json.id}/stock-adjustments`, { token: tokA, body: { delta: -2147483648, reason: 'smoke' } });
+  check('ajuste con delta = Integer.MIN_VALUE = 400 (sin desborde ni 500)', hugeDelta.status === 400, hugeDelta.status);
   const adjBad = await api('POST', `/api/products/${p1.json.id}/stock-adjustments`, { token: tokA, body: { delta: -999, reason: 'smoke' } });
   check('ajuste que deja stock negativo = 409', adjBad.status === 409, adjBad.json);
   const psum = await api('GET', '/api/products/summary', { token: tokA });

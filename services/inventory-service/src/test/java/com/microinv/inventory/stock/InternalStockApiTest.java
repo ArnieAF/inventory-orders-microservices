@@ -91,12 +91,34 @@ class InternalStockApiTest extends AbstractIntegrationTest {
         UUID inactive = insertProduct("API-4", 10, 2);
         jdbc.update("update products set active = false where id = ?", inactive);
 
-        mvc.perform(internal("/internal/stock/reserve", reserveBody(UUID.randomUUID(), line(UUID.randomUUID(), 1))))
+        UUID missing = UUID.randomUUID();
+        // NOT_FOUND y PRODUCT_INACTIVE comparten forma: details:[{productId, message}]
+        mvc.perform(internal("/internal/stock/reserve", reserveBody(UUID.randomUUID(), line(missing, 1))))
                 .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.code").value("NOT_FOUND"));
+                .andExpect(jsonPath("$.code").value("NOT_FOUND"))
+                .andExpect(jsonPath("$.details", hasSize(1)))
+                .andExpect(jsonPath("$.details[0].productId").value(missing.toString()))
+                .andExpect(jsonPath("$.details[0].message").value("Product not found"));
         mvc.perform(internal("/internal/stock/reserve", reserveBody(UUID.randomUUID(), line(inactive, 1))))
                 .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.code").value("PRODUCT_INACTIVE"));
+                .andExpect(jsonPath("$.code").value("PRODUCT_INACTIVE"))
+                .andExpect(jsonPath("$.details", hasSize(1)))
+                .andExpect(jsonPath("$.details[0].productId").value(inactive.toString()))
+                .andExpect(jsonPath("$.details[0].message").value("Product is inactive"));
+    }
+
+    @Test
+    void reserveOfAnAlreadyReleasedOrderRefIs409InvalidStatusTransition() throws Exception {
+        UUID p = insertProduct("API-4B", 10, 2);
+        UUID order = UUID.randomUUID();
+        // la compensacion llega antes que la reserva: lapida
+        mvc.perform(internal("/internal/stock/release", "{\"orderRef\":\"" + order + "\"}"))
+                .andExpect(status().isNoContent());
+
+        mvc.perform(internal("/internal/stock/reserve", reserveBody(order, line(p, 3))))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("INVALID_STATUS_TRANSITION"));
+        assertThat(stockOf(p)).isEqualTo(10);
     }
 
     @Test

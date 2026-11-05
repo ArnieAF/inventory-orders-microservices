@@ -11,6 +11,9 @@ import static org.mockito.Mockito.verify;
 import com.microinv.inventory.config.NotificationProperties;
 import com.microinv.inventory.stock.LowStockEvent;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -97,24 +100,40 @@ class LowStockNotificationListenerTest {
 
     @Test
     void asyncModeDropsInsteadOfFailingWhenQueueIsFull() throws Exception {
+        int submittedCount = 1000;
         CountDownLatch release = new CountDownLatch(1);
+        List<UUID> delivered = Collections.synchronizedList(new ArrayList<>());
         NotificationClient stuck = request -> {
             try {
-                release.await(10, TimeUnit.SECONDS);
+                release.await(10, TimeUnit.SECONDS); // el servicio de notificaciones "no responde"
             } catch (InterruptedException ex) {
                 Thread.currentThread().interrupt();
             }
+            delivered.add(request.entityId());
         };
+        List<UUID> submitted = new ArrayList<>();
         LowStockNotificationListener listener = new LowStockNotificationListener(stuck, props(true));
         try {
             assertThatCode(() -> {
-                for (int i = 0; i < 1000; i++) {
-                    listener.onLowStock(event(null));
+                for (int i = 0; i < submittedCount; i++) {
+                    LowStockEvent e = event(null);
+                    submitted.add(e.productId());
+                    listener.onLowStock(e); // nunca lanza ni bloquea, aunque la cola este llena
                 }
             }).doesNotThrowAnyException();
         } finally {
             release.countDown();
-            listener.shutdown();
+            listener.shutdown(); // espera a que se vacie lo aceptado
         }
+
+        // Se entrega lo aceptado (hilos activos + cola) y el resto se DESCARTA.
+        int accepted = LowStockNotificationListener.QUEUE_CAPACITY + LowStockNotificationListener.MAX_THREADS;
+        assertThat(delivered).hasSizeBetween(LowStockNotificationListener.QUEUE_CAPACITY, accepted);
+        assertThat(delivered.size()).as("hubo descartes").isLessThan(submittedCount);
+        // Las primeras (las que entraron en el hilo y en la cola) son las que se entregan, sin duplicados.
+        assertThat(delivered).containsAll(submitted.subList(0, LowStockNotificationListener.QUEUE_CAPACITY));
+        assertThat(delivered).doesNotHaveDuplicates();
+        // Las ultimas (rechazadas por cola llena) no se entregaron.
+        assertThat(delivered).doesNotContainAnyElementsOf(submitted.subList(accepted, submittedCount));
     }
 }

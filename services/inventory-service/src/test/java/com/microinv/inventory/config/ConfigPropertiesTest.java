@@ -12,19 +12,19 @@ class ConfigPropertiesTest {
 
     @Test
     void acceptsMinimumValidSecurityConfig() {
-        SecurityProperties p = new SecurityProperties(SECRET_32, "micro-inventory", "key");
+        SecurityProperties p = new SecurityProperties(SECRET_32, "micro-inventory", "internal-key-0123456789");
         assertThat(p.jwtSecret()).hasSize(32);
     }
 
     @Test
     void rejectsMissingOrShortJwtSecret() {
-        assertThatThrownBy(() -> new SecurityProperties(null, "micro-inventory", "key"))
+        assertThatThrownBy(() -> new SecurityProperties(null, "micro-inventory", "internal-key-0123456789"))
                 .hasMessageContaining("JWT_SECRET");
-        assertThatThrownBy(() -> new SecurityProperties("", "micro-inventory", "key"))
+        assertThatThrownBy(() -> new SecurityProperties("", "micro-inventory", "internal-key-0123456789"))
                 .hasMessageContaining("JWT_SECRET");
-        assertThatThrownBy(() -> new SecurityProperties(SECRET_32.substring(0, 31), "micro-inventory", "key"))
+        assertThatThrownBy(() -> new SecurityProperties(SECRET_32.substring(0, 31), "micro-inventory", "internal-key-0123456789"))
                 .hasMessageContaining("at least 32");
-        assertThatThrownBy(() -> new SecurityProperties(" ".repeat(40), "micro-inventory", "key"))
+        assertThatThrownBy(() -> new SecurityProperties(" ".repeat(40), "micro-inventory", "internal-key-0123456789"))
                 .hasMessageContaining("JWT_SECRET");
     }
 
@@ -37,14 +37,26 @@ class ConfigPropertiesTest {
     }
 
     @Test
+    void rejectsInternalApiKeyShorterThan16CharactersWithoutEchoingIt() {
+        String fifteen = "k".repeat(15);
+        assertThatThrownBy(() -> new SecurityProperties(SECRET_32, "micro-inventory", fifteen))
+                .hasMessage("INTERNAL_API_KEY must be set and have at least 16 characters")
+                .satisfies(e -> assertThat(e.getMessage()).doesNotContain(fifteen));
+        assertThatThrownBy(() -> new SecurityProperties(SECRET_32, "micro-inventory", " ".repeat(30)))
+                .hasMessageContaining("INTERNAL_API_KEY");
+        // exactamente 16: valido
+        assertThat(new SecurityProperties(SECRET_32, "micro-inventory", "k".repeat(16)).internalApiKey()).hasSize(16);
+    }
+
+    @Test
     void rejectsBlankIssuer() {
-        assertThatThrownBy(() -> new SecurityProperties(SECRET_32, " ", "key")).hasMessageContaining("JWT_ISSUER");
+        assertThatThrownBy(() -> new SecurityProperties(SECRET_32, " ", "internal-key-0123456789")).hasMessageContaining("JWT_ISSUER");
     }
 
     @Test
     void toStringNeverPrintsSecrets() {
-        String text = new SecurityProperties(SECRET_32, "micro-inventory", "super-internal-key").toString();
-        assertThat(text).doesNotContain(SECRET_32).doesNotContain("super-internal-key");
+        String text = new SecurityProperties(SECRET_32, "micro-inventory", "super-internal-key-0123456789").toString();
+        assertThat(text).doesNotContain(SECRET_32).doesNotContain("super-internal-key-0123456789");
     }
 
     @Test

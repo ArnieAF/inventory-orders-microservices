@@ -89,22 +89,38 @@ class StockServiceTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void unknownProductIsNotFoundAndNothingIsDeducted() {
+    void unknownProductIsNotFoundWithDetailsAndNothingIsDeducted() {
         UUID ok = insertProduct("NF-OK", 10, 2);
-        assertThatThrownBy(() -> stockService.reserve(UUID.randomUUID(), List.of(item(ok, 1), item(UUID.randomUUID(), 1))))
-                .satisfies(t -> assertApiError(t, ErrorCode.NOT_FOUND));
+        UUID missing1 = UUID.randomUUID();
+        UUID missing2 = UUID.randomUUID();
+        assertThatThrownBy(() -> stockService.reserve(UUID.randomUUID(),
+                List.of(item(ok, 1), item(missing1, 1), item(missing2, 1))))
+                .isInstanceOfSatisfying(ApiException.class, e -> {
+                    assertThat(e.getCode()).isEqualTo(ErrorCode.NOT_FOUND);
+                    // details:[{productId, message}] con TODOS los inexistentes
+                    assertThat(e.getDetails()).asList().containsExactlyInAnyOrder(
+                            new ApiException.ProductDetail(missing1, "Product not found"),
+                            new ApiException.ProductDetail(missing2, "Product not found"));
+                });
         assertThat(stockOf(ok)).isEqualTo(10);
         assertThat(countAllMovements()).isZero();
     }
 
     @Test
-    void inactiveProductIsRejectedAndNothingIsDeducted() {
+    void inactiveProductIsRejectedWithDetailsAndNothingIsDeducted() {
         UUID ok = insertProduct("IN-OK", 10, 2);
         UUID inactive = insertProduct("IN-OFF", 10, 2);
-        jdbc.update("update products set active = false where id = ?", inactive);
+        UUID inactive2 = insertProduct("IN-OFF2", 10, 2);
+        jdbc.update("update products set active = false where id in (?, ?)", inactive, inactive2);
 
-        assertThatThrownBy(() -> stockService.reserve(UUID.randomUUID(), List.of(item(ok, 1), item(inactive, 1))))
-                .satisfies(t -> assertApiError(t, ErrorCode.PRODUCT_INACTIVE));
+        assertThatThrownBy(() -> stockService.reserve(UUID.randomUUID(),
+                List.of(item(ok, 1), item(inactive, 1), item(inactive2, 1))))
+                .isInstanceOfSatisfying(ApiException.class, e -> {
+                    assertThat(e.getCode()).isEqualTo(ErrorCode.PRODUCT_INACTIVE);
+                    assertThat(e.getDetails()).asList().containsExactlyInAnyOrder(
+                            new ApiException.ProductDetail(inactive, "Product is inactive"),
+                            new ApiException.ProductDetail(inactive2, "Product is inactive"));
+                });
         assertThat(stockOf(ok)).isEqualTo(10);
         assertThat(stockOf(inactive)).isEqualTo(10);
         assertThat(countAllMovements()).isZero();
@@ -250,6 +266,38 @@ class StockServiceTest extends AbstractIntegrationTest {
         stockService.release(order);
 
         assertThat(stockOf(a)).isEqualTo(24); // se revierte exactamente el movimiento registrado (+4)
+    }
+
+    @Test
+    void releaseNeverOverflowsAtTheContractLimits() {
+        UUID p = insertProduct("LIM-1", StockLimits.MAX_STOCK, 0);
+        UUID order = UUID.randomUUID();
+        stockService.reserve(order, List.of(item(p, StockLimits.MAX_STOCK))); // stock 0
+        jdbc.update("update products set stock = ? where id = ?", StockLimits.MAX_STOCK, p); // reposicion al tope
+
+        stockService.release(order); // 1e9 + 1e9 = 2e9: cabe en un int
+
+        assertThat(stockOf(p)).isEqualTo(2 * StockLimits.MAX_STOCK);
+        assertThat(reservationStatus(order)).isEqualTo("RELEASED");
+    }
+
+    @Test
+    void releaseIsNeverBlockedByCorruptOversizedStock() {
+        UUID p = insertProduct("LIM-2", 10, 0);
+        UUID order = UUID.randomUUID();
+        stockService.reserve(order, List.of(item(p, 5)));
+        jdbc.update("update products set stock = ? where id = ?", Integer.MAX_VALUE, p); // dato fuera de contrato
+
+        stockService.release(order); // no lanza ArithmeticException ni deja el pedido imposible de liberar
+
+        assertThat(stockOf(p)).isEqualTo(Integer.MAX_VALUE);
+        assertThat(reservationStatus(order)).isEqualTo("RELEASED");
+        assertThat(countMovements(order, MovementType.RELEASE)).isEqualTo(1);
+    }
+
+    private String reservationStatus(UUID orderRef) {
+        return jdbc.queryForObject("select status from stock_reservations where order_ref = ?", String.class,
+                orderRef);
     }
 
     // ---------- orden de bloqueo ----------

@@ -20,12 +20,15 @@ class StartupFailureTest {
 
     private static final String H2 = "jdbc:h2:mem:startup-failure;MODE=PostgreSQL;DB_CLOSE_DELAY=-1";
     private static final String GOOD_SECRET = "0123456789abcdef0123456789abcdef";
+    private static final String GOOD_KEY = "internal-key-0123456789";
 
     private static void run(boolean withDatasource, String... properties) {
         List<String> args = new ArrayList<>(List.of("--server.port=0"));
         if (withDatasource) {
             args.addAll(List.of("--spring.datasource.url=" + H2, "--spring.datasource.username=sa",
-                    "--spring.datasource.password="));
+                    "--spring.datasource.password=",
+                    // el application.yml real usa la sintaxis de PostgreSQL (SET lock_timeout = 4000)
+                    "--spring.datasource.hikari.connection-init-sql=SET LOCK_TIMEOUT 4000"));
         }
         for (String property : properties) {
             args.add("--" + property); // argumentos de linea de comandos: ganan al application.yml
@@ -50,14 +53,14 @@ class StartupFailureTest {
 
     @Test
     void failsWhenJwtSecretIsNotConfiguredAtAll() {
-        assertThatThrownBy(() -> run("app.security.internal-api-key=some-key"))
+        assertThatThrownBy(() -> run("app.security.internal-api-key=" + GOOD_KEY))
                 .isInstanceOf(StartupConfigurationException.class)
                 .hasMessage("JWT_SECRET must be set and have at least 32 characters");
     }
 
     @Test
     void failsWhenJwtSecretIsTooShortWithoutEchoingIt() {
-        assertThatThrownBy(() -> run("app.security.jwt-secret=short", "app.security.internal-api-key=some-key"))
+        assertThatThrownBy(() -> run("app.security.jwt-secret=short", "app.security.internal-api-key=" + GOOD_KEY))
                 .isInstanceOf(StartupConfigurationException.class)
                 .satisfies(e -> assertThat(rootMessages(e)).contains("at least 32 characters")
                         .doesNotContain("short"));
@@ -67,7 +70,16 @@ class StartupFailureTest {
     void failsWhenInternalApiKeyIsMissing() {
         assertThatThrownBy(() -> run("app.security.jwt-secret=" + GOOD_SECRET))
                 .isInstanceOf(StartupConfigurationException.class)
-                .hasMessage("INTERNAL_API_KEY must be set");
+                .hasMessage("INTERNAL_API_KEY must be set and have at least 16 characters");
+    }
+
+    @Test
+    void failsWhenInternalApiKeyIsShorterThan16CharactersWithoutEchoingIt() {
+        assertThatThrownBy(() -> run("app.security.jwt-secret=" + GOOD_SECRET,
+                "app.security.internal-api-key=short-key-15-ch"))
+                .isInstanceOf(StartupConfigurationException.class)
+                .hasMessage("INTERNAL_API_KEY must be set and have at least 16 characters")
+                .satisfies(e -> assertThat(rootMessages(e)).doesNotContain("short-key-15-ch"));
     }
 
     @Test
@@ -80,18 +92,18 @@ class StartupFailureTest {
 
     @Test
     void failureAnalyzerPrintsTheClearMessageAndAnAction() {
-        StartupConfigurationException cause = new StartupConfigurationException("INTERNAL_API_KEY must be set");
+        StartupConfigurationException cause = new StartupConfigurationException("INTERNAL_API_KEY must be set and have at least 16 characters");
         FailureAnalysis analysis = new StartupConfigurationFailureAnalyzer().analyze(cause);
 
         assertThat(analysis).isNotNull();
-        assertThat(analysis.getDescription()).isEqualTo("INTERNAL_API_KEY must be set");
-        assertThat(analysis.getAction()).contains("JWT_SECRET").contains("INTERNAL_API_KEY");
+        assertThat(analysis.getDescription()).isEqualTo("INTERNAL_API_KEY must be set and have at least 16 characters");
+        assertThat(analysis.getAction()).contains("JWT_SECRET").contains("INTERNAL_API_KEY").contains("16");
     }
 
     /** Control: con la configuracion completa y valida SI arranca (asi los fallos de arriba son por la config). */
     @Test
     void startsWithAValidConfiguration() {
-        assertThatCode(() -> run("app.security.jwt-secret=" + GOOD_SECRET, "app.security.internal-api-key=some-key"))
+        assertThatCode(() -> run("app.security.jwt-secret=" + GOOD_SECRET, "app.security.internal-api-key=" + GOOD_KEY))
                 .doesNotThrowAnyException();
     }
 }

@@ -1,0 +1,21 @@
+# Fuera del contexto de build: artefactos, secretos y archivos de desarrollo
+target/
+.git/
+.gitignore
+.dockerignore
+Dockerfile
+*.md
+
+# Secretos y entorno local (nunca van a la imagen)
+.env
+.env.*
+*.pem
+*.key
+
+# IDE / SO
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+*.log

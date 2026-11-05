@@ -180,9 +180,10 @@ async function main() {
 
   console.log('\n[3] Inventario');
   const internal = await api('POST', '/internal/stock/reserve', { token: tokA, body: { orderRef: crypto.randomUUID(), items: [] } });
-  check('/internal/** no se enruta (404)', internal.status === 404, internal.status);
+  // Directo al gateway: 404. A través de nginx (frontend): 405, porque en esa ruta solo sirve estáticos. Ambos = inalcanzable.
+  check('/internal/** es inalcanzable (404 gateway / 405 nginx)', [404, 405].includes(internal.status), internal.status);
   const internal2 = await api('POST', '/internal/stock/reserve', { token: tokA, headers: { 'X-Internal-Key': 'adivinando' }, body: {} });
-  check('/internal/** con X-Internal-Key falsa tampoco (404)', internal2.status === 404, internal2.status);
+  check('/internal/** con X-Internal-Key falsa tampoco (404/405)', [404, 405].includes(internal2.status), internal2.status);
   const p1 = await newProduct(tokA, 'P1', { price: '10.50', stock: 10, lowStockThreshold: 2 });
   check('crear producto = 201', p1.status === 201 && p1.json?.stock === 10, p1.json);
   const p2 = await newProduct(tokA, 'P2', { price: '3.25', stock: 6, lowStockThreshold: 5 });

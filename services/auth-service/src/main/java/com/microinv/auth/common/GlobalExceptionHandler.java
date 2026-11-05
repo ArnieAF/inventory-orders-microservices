@@ -42,10 +42,23 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     ResponseEntity<Object> handleUnexpected(Exception ex, HttpServletRequest request) {
-        // Solo el tipo de excepcion en el mensaje (el texto podria contener SQL o datos del usuario).
-        log.error("Unhandled error on {} {}: {}", request.getMethod(), request.getRequestURI(),
-                ex.getClass().getSimpleName(), ex);
+        // En ERROR solo clases y ruta: el mensaje de la excepcion (y la traza, que lo incluye) puede traer
+        // SQL o valores rechazados (email, password). La traza completa queda solo en DEBUG.
+        log.error("Unhandled error on {} {}: {} (root cause: {})", request.getMethod(), request.getRequestURI(),
+                ex.getClass().getName(), rootCauseClass(ex));
+        if (log.isDebugEnabled()) {
+            log.debug("Stack trace of the unhandled error (may contain sensitive values)", ex);
+        }
         return json(ApiError.of(ErrorCode.INTERNAL_ERROR, request.getRequestURI()));
+    }
+
+    /** Nombre de la clase de la causa raiz (profundidad acotada por si hay ciclos). */
+    static String rootCauseClass(Throwable ex) {
+        Throwable root = ex;
+        for (int depth = 0; root.getCause() != null && root.getCause() != root && depth < 16; depth++) {
+            root = root.getCause();
+        }
+        return root.getClass().getName();
     }
 
     @Override
@@ -77,6 +90,9 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         if (value == 404) {
             code = ErrorCode.NOT_FOUND.name();
             message = ErrorCode.NOT_FOUND.defaultMessage();
+        } else if (value == 503) {
+            code = ErrorCode.SERVICE_UNAVAILABLE.name();
+            message = ErrorCode.SERVICE_UNAVAILABLE.defaultMessage();
         } else if (value >= 500) {
             code = ErrorCode.INTERNAL_ERROR.name();
             message = ErrorCode.INTERNAL_ERROR.defaultMessage();

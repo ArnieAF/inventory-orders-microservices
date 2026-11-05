@@ -14,8 +14,7 @@ public record LoginRequest(
         String username,
 
         @NotEmpty(message = "is required")
-        @Size(max = 72, message = "must be at most 72 characters")
-        @MaxUtf8Bytes(72)
+        @Utf8Bytes(max = 72, message = "must be at most 72 bytes when UTF-8 encoded (bytes, not characters)")
         String password) {
 
     @Override

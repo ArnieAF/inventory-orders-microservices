@@ -1,20 +1,20 @@
 package com.microinv.auth.web;
 
+import com.microinv.auth.user.Normalizer;
 import jakarta.validation.ConstraintValidator;
 import jakarta.validation.ConstraintValidatorContext;
-import java.nio.charset.StandardCharsets;
 
-public class MaxUtf8BytesValidator implements ConstraintValidator<MaxUtf8Bytes, CharSequence> {
+public class NormalizedMaxLengthValidator implements ConstraintValidator<NormalizedMaxLength, CharSequence> {
 
     private int max;
 
     @Override
-    public void initialize(MaxUtf8Bytes annotation) {
+    public void initialize(NormalizedMaxLength annotation) {
         this.max = annotation.value();
     }
 
     @Override
     public boolean isValid(CharSequence value, ConstraintValidatorContext context) {
-        return value == null || value.toString().getBytes(StandardCharsets.UTF_8).length <= max;
+        return value == null || Normalizer.lower(value.toString()).length() <= max;
     }
 }

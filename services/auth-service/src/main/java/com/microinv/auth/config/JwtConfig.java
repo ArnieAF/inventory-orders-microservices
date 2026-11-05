@@ -70,12 +70,19 @@ public class JwtConfig {
         NimbusJwtDecoder decoder = NimbusJwtDecoder.withSecretKey(jwtSecretKey)
                 .macAlgorithm(MacAlgorithm.HS256)
                 .build();
-        OAuth2TokenValidator<Jwt> subjectPresent = jwt -> StringUtils.hasText(jwt.getSubject())
-                ? OAuth2TokenValidatorResult.success()
-                : OAuth2TokenValidatorResult.failure(new OAuth2Error("invalid_token", "Missing subject", null));
-        // Valida exp/nbf (con la tolerancia por defecto de 60 s), iss y presencia de sub.
+        // Contrato 3: todos los validadores exigen exp, sub e iss (tolerancia de reloj: 60 s, la de Spring).
+        // JwtTimestampValidator por si solo ACEPTA un token sin exp, por eso exp se exige aparte.
+        OAuth2TokenValidator<Jwt> requiredClaims = jwt -> {
+            if (jwt.getExpiresAt() == null) {
+                return OAuth2TokenValidatorResult.failure(new OAuth2Error("invalid_token", "Missing expiration", null));
+            }
+            if (!StringUtils.hasText(jwt.getSubject())) {
+                return OAuth2TokenValidatorResult.failure(new OAuth2Error("invalid_token", "Missing subject", null));
+            }
+            return OAuth2TokenValidatorResult.success();
+        };
         decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(
-                JwtValidators.createDefaultWithIssuer(props.issuer()), subjectPresent));
+                JwtValidators.createDefaultWithIssuer(props.issuer()), requiredClaims));
         return decoder;
     }
 

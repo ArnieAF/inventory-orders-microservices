@@ -1,0 +1,62 @@
+server:
+  port: 8080
+  shutdown: graceful
+
+spring:
+  application:
+    name: api-gateway
+  main:
+    web-application-type: reactive
+  cloud:
+    gateway:
+      server:
+        webflux:
+          httpclient:
+            connect-timeout: 2000      # ms
+            response-timeout: 10s
+            pool:
+              max-idle-time: 15s       # evita reutilizar conexiones que el backend ya cerro
+          # Rutas del contrato (seccion 4), SIN reescritura de path. Los destinos salen del entorno
+          # con los nombres DNS de Docker Compose como valor por defecto (no son secretos).
+          routes:
+            - id: auth
+              uri: ${ROUTE_AUTH_URI:http://auth-service:8081}
+              predicates:
+                - Path=/api/auth/**
+            - id: inventory
+              uri: ${ROUTE_INVENTORY_URI:http://inventory-service:8082}
+              predicates:
+                - Path=/api/products/**
+            - id: orders
+              uri: ${ROUTE_ORDER_URI:http://order-service:8083}
+              predicates:
+                - Path=/api/orders/**
+            - id: notifications
+              uri: ${ROUTE_NOTIFICATION_URI:http://notification-service:8084}
+              predicates:
+                - Path=/api/notifications/**
+            # WebSocket (STOMP nativo). Solo si la peticion es un Upgrade; cualquier otro GET /ws -> 404.
+            - id: notifications-ws
+              uri: ${ROUTE_NOTIFICATION_WS_URI:ws://notification-service:8084}
+              predicates:
+                - Path=/ws/**
+                - Header=Upgrade, (?i)websocket
+
+# Solo health expuesto, sin detalles.
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+      discovery:
+        enabled: false
+  endpoint:
+    health:
+      show-details: never
+      show-components: never
+
+app:
+  jwt:
+    # JWT_SECRET es obligatorio (>= 32 caracteres). Sin valor por defecto: si falta, el arranque falla.
+    secret: ${JWT_SECRET:}
+    issuer: ${JWT_ISSUER:micro-inventory}

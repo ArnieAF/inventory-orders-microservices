@@ -88,11 +88,6 @@ export function OrdersPage() {
       <PageHeader
         title="Pedidos"
         description="Cada pedido reserva stock al crearse. Cancelarlo lo devuelve al inventario."
-        actions={
-          <ButtonLink to="/orders/new" variant="primary" icon={<PlusIcon aria-hidden className="size-4" weight="bold" />}>
-            Nuevo pedido
-          </ButtonLink>
-        }
       />
 
       <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">

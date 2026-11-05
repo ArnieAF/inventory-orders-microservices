@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { makeProduct } from '../test/fixtures'
 import {
+  EMPTY_DRAFT,
   addProductToDraft,
+  draftReducer,
   applyShortages,
   estimateTotalCents,
   setLineQuantity,
@@ -19,6 +21,18 @@ function line(overrides: Partial<DraftLine> = {}): DraftLine {
 }
 
 describe('borrador de pedido', () => {
+  it('el reducer encadena varias altas seguidas sin perder líneas', () => {
+    let state = EMPTY_DRAFT
+    for (const product of [caja, cinta, caja]) state = draftReducer(state, { type: 'add', product })
+    expect(state.lines.map((l) => [l.productId, l.quantity])).toEqual([
+      ['p1', '2'],
+      ['p2', '1'],
+    ])
+    state = draftReducer(state, { type: 'remove', productId: 'p1' })
+    expect(state.lines.map((l) => l.productId)).toEqual(['p2'])
+  })
+
+
   it('añadir dos veces el mismo producto suma cantidad en vez de duplicar la línea', () => {
     let result = addProductToDraft([], caja)
     expect(result.status).toBe('added')

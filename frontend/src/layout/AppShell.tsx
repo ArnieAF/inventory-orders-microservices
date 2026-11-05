@@ -92,15 +92,17 @@ export function AppShell() {
             })}
           </nav>
           <div className="ml-auto flex items-center gap-1.5">
-            <ButtonLink
-              to="/orders/new"
-              variant="primary"
-              size="sm"
-              className="mr-1.5 hidden md:inline-flex"
-              icon={<PlusIcon aria-hidden className="size-4" weight="bold" />}
-            >
-              Nuevo pedido
-            </ButtonLink>
+            {/* En móvil la acción vive en la barra inferior ("Nuevo"). */}
+            <div className="mr-1.5 hidden md:block">
+              <ButtonLink
+                to="/orders/new"
+                variant="primary"
+                size="sm"
+                icon={<PlusIcon aria-hidden className="size-4" weight="bold" />}
+              >
+                Nuevo pedido
+              </ButtonLink>
+            </div>
             <NotificationBell />
             <UserMenu />
           </div>

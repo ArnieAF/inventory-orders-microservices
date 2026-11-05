@@ -9,7 +9,7 @@ const POINTS: ReadonlyArray<{ icon: Icon; text: string }> = [
 
 export function AuthLayout({ title, subtitle, children }: { title: string; subtitle: ReactNode; children: ReactNode }) {
   return (
-    <div className="grid min-h-dvh lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
+    <div className="grid grid-cols-1 min-h-dvh lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
       <aside className="relative hidden flex-col justify-between overflow-hidden bg-accent p-10 text-accent-ink lg:flex xl:p-14">
         <div className="flex items-center gap-3">
           <span className="grid size-10 place-items-center rounded-xl bg-accent-ink/12 ring-1 ring-accent-ink/20">

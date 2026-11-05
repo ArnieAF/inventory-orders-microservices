@@ -33,15 +33,10 @@ export function DashboardPage() {
             momento; se actualizan solos con cada aviso.
           </>
         }
-        actions={
-          <ButtonLink to="/orders/new" variant="primary" icon={<PlusIcon aria-hidden className="size-4" weight="bold" />}>
-            Nuevo pedido
-          </ButtonLink>
-        }
       />
-      <div className="grid gap-6">
+      <div className="grid grid-cols-1 gap-6">
         <InventoryFigures />
-        <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+        <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
           <OrdersByStatus />
           <LowStockList />
         </div>
@@ -77,7 +72,7 @@ function InventoryFigures() {
     <Panel labelledBy="inventory-title">
       <SectionHeading id="inventory-title" title="Inventario" link={{ to: '/products', label: 'Productos' }} />
       {query.isPending ? (
-        <Loading label="Cargando inventario…" className="grid gap-px px-5 pb-5 sm:grid-cols-3">
+        <Loading label="Cargando inventario…" className="grid grid-cols-1 gap-px px-5 pb-5 sm:grid-cols-3">
           {[0, 1, 2].map((key) => (
             <div key={key} className="space-y-2 py-2">
               <Skeleton className="h-3 w-24" />
@@ -88,7 +83,7 @@ function InventoryFigures() {
       ) : query.isError ? (
         <ErrorState className="py-8" error={query.error} onRetry={() => void query.refetch()} retrying={query.isRefetching} />
       ) : (
-        <dl className="grid divide-line px-5 pb-5 max-sm:divide-y sm:grid-cols-3 sm:divide-x">
+        <dl className="grid grid-cols-1 divide-line px-5 pb-5 max-sm:divide-y sm:grid-cols-3 sm:divide-x">
           <Figure label="Productos activos" value={formatInteger(query.data.totalProducts)} first />
           <Figure label="Unidades en stock" value={formatInteger(query.data.totalUnits)} />
           <Figure

@@ -72,7 +72,7 @@ export function OrderDetailPage() {
         <PageHeader title={title} back={back} />
         <Loading label="Cargando pedido…" className="space-y-6">
           <Skeleton className="h-20 w-full rounded-xl" />
-          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
             <Skeleton className="h-64 rounded-xl" />
             <Skeleton className="h-48 rounded-xl" />
           </div>
@@ -159,7 +159,7 @@ export function OrderDetailPage() {
         <StatusTrack status={order.status} />
       </Panel>
 
-      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
+      <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
         <OrderItems order={order} />
         <OrderInfo order={order} />
       </div>
@@ -224,7 +224,7 @@ function OrderItems({ order }: { order: Order }) {
           Artículos
         </h2>
         <p className="text-sm text-ink-3 tabular-nums">
-          {formatInteger(order.items.length)} {order.items.length === 1 ? 'línea' : 'líneas'}, {formatInteger(units)} uds.
+          {formatInteger(order.items.length)} {order.items.length === 1 ? 'línea' : 'líneas'}, {formatInteger(units)} {units === 1 ? 'ud.' : 'uds.'}
         </p>
       </div>
       <p className="px-5 pb-3 text-xs text-ink-3">Precios y nombres tal como estaban al crear el pedido.</p>

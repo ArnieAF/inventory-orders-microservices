@@ -135,6 +135,47 @@ export interface StockShortage {
   available: number
 }
 
+// Reducer del borrador: cada acción parte del estado más reciente, así varios clics
+// seguidos en "Añadir" no se pisan entre sí.
+
+export interface DraftState {
+  lines: DraftLine[]
+  /** Aviso no bloqueante (límite de líneas o de cantidad). */
+  notice: string | null
+}
+
+export type DraftAction =
+  | { type: 'add'; product: Product }
+  | { type: 'quantity'; productId: string; value: string }
+  | { type: 'step'; productId: string; step: 1 | -1 }
+  | { type: 'remove'; productId: string }
+  | { type: 'applyShortages'; shortages: ReadonlyMap<string, StockShortage> }
+
+export const EMPTY_DRAFT: DraftState = { lines: [], notice: null }
+
+export function draftReducer(state: DraftState, action: DraftAction): DraftState {
+  switch (action.type) {
+    case 'add': {
+      const result = addProductToDraft(state.lines, action.product)
+      const notice =
+        result.status === 'max-lines'
+          ? `Un pedido admite como máximo ${LIMITS.orderItems.max} productos distintos.`
+          : result.status === 'limit'
+            ? `La cantidad máxima por producto es ${LIMITS.quantity.max}.`
+            : null
+      return { lines: result.lines, notice }
+    }
+    case 'quantity':
+      return { ...state, lines: setLineQuantity(state.lines, action.productId, action.value) }
+    case 'step':
+      return { ...state, lines: stepLineQuantity(state.lines, action.productId, action.step) }
+    case 'remove':
+      return { lines: removeLine(state.lines, action.productId), notice: null }
+    case 'applyShortages':
+      return { ...state, lines: applyShortages(state.lines, action.shortages) }
+  }
+}
+
 /** `details` de INSUFFICIENT_STOCK (`{productId, requested, available}`) → mapa por producto. */
 export function shortagesFromDetails(details: readonly ApiErrorDetail[]): Map<string, StockShortage> {
   const result = new Map<string, StockShortage>()

@@ -125,7 +125,7 @@ export function ProductFormDialog({ product, onClose }: ProductFormDialogProps) 
           </Banner>
         ) : null}
 
-        <div className="grid gap-5 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
           <TextField
             label="SKU"
             name="sku"
@@ -175,7 +175,7 @@ export function ProductFormDialog({ product, onClose }: ProductFormDialogProps) 
           aside={`Opcional · ${values.description.length}/${LIMITS.description.max}`}
         />
 
-        <div className="grid gap-5 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
           {editing ? (
             <div className="flex flex-col gap-1.5">
               <span className="text-sm font-medium text-ink">Stock actual</span>

@@ -1,5 +1,5 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useId, useRef, useState, type FormEvent } from 'react'
+import { useId, useReducer, useRef, useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router'
 import { ApiError } from '../../api/client'
 import { errorMessage } from '../../api/errors'
@@ -23,14 +23,11 @@ import {
 } from '../../components/icons'
 import { formatInteger, formatMoney, fromCents, shortId, toCents } from '../../domain/format'
 import {
-  addProductToDraft,
-  applyShortages,
+  EMPTY_DRAFT,
+  draftReducer,
   estimateTotalCents,
   parseQuantity,
-  removeLine,
-  setLineQuantity,
   shortagesFromDetails,
-  stepLineQuantity,
   validateOrderDraft,
   type DraftErrors,
   type DraftLine,
@@ -52,14 +49,13 @@ export function NewOrderPage() {
   const formId = useId()
   const formRef = useRef<HTMLFormElement>(null)
 
-  const [lines, setLines] = useState<DraftLine[]>([])
+  const [{ lines, notice }, dispatch] = useReducer(draftReducer, EMPTY_DRAFT)
   const [customerName, setCustomerName] = useState('')
   const [notes, setNotes] = useState('')
   const [errors, setErrors] = useState<DraftErrors>(EMPTY_ERRORS)
   const [attempt, setAttempt] = useState(0)
   const [shortages, setShortages] = useState<ReadonlyMap<string, StockShortage>>(new Map())
   const [unavailable, setUnavailable] = useState<ReadonlySet<string>>(new Set())
-  const [notice, setNotice] = useState<string | null>(null)
   useFocusFirstInvalid(formRef, attempt)
 
   const mutation = useMutation({
@@ -84,15 +80,7 @@ export function NewOrderPage() {
   })
 
   function addProduct(product: Product) {
-    const result = addProductToDraft(lines, product)
-    setLines(result.lines)
-    setNotice(
-      result.status === 'max-lines'
-        ? `Un pedido admite como máximo ${LIMITS.orderItems.max} productos distintos.`
-        : result.status === 'limit'
-          ? `La cantidad máxima por producto es ${formatInteger(LIMITS.quantity.max)}.`
-          : null,
-    )
+    dispatch({ type: 'add', product })
     if (errors.items) setErrors((current) => ({ ...current, items: undefined }))
   }
 
@@ -133,7 +121,7 @@ export function NewOrderPage() {
         }
       />
 
-      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)]">
+      <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)]">
         <ProductPicker lines={lines} onAdd={addProduct} />
 
         <Panel labelledBy={`${formId}-title`} className="lg:sticky lg:top-24">
@@ -145,7 +133,7 @@ export function NewOrderPage() {
               <p className="text-sm text-ink-3 tabular-nums">
                 {lines.length === 0
                   ? 'Sin productos'
-                  : `${formatInteger(lines.length)} ${lines.length === 1 ? 'producto' : 'productos'}, ${formatInteger(units)} uds.`}
+                  : `${formatInteger(lines.length)} ${lines.length === 1 ? 'producto' : 'productos'}, ${formatInteger(units)} ${units === 1 ? 'ud.' : 'uds.'}`}
               </p>
             </div>
 
@@ -156,7 +144,7 @@ export function NewOrderPage() {
                   live
                   title="No hay stock suficiente"
                   action={
-                    <Button size="sm" onClick={() => setLines((current) => applyShortages(current, shortages))}>
+                    <Button size="sm" onClick={() => dispatch({ type: 'applyShortages', shortages })}>
                       Ajustar cantidades
                     </Button>
                   }
@@ -204,9 +192,9 @@ export function NewOrderPage() {
                       error={errors.quantities[line.productId]}
                       shortage={shortages.get(line.productId)}
                       unavailable={unavailable.has(line.productId)}
-                      onQuantity={(value) => setLines((current) => setLineQuantity(current, line.productId, value))}
-                      onStep={(step) => setLines((current) => stepLineQuantity(current, line.productId, step))}
-                      onRemove={() => setLines((current) => removeLine(current, line.productId))}
+                      onQuantity={(value) => dispatch({ type: 'quantity', productId: line.productId, value })}
+                      onStep={(step) => dispatch({ type: 'step', productId: line.productId, step })}
+                      onRemove={() => dispatch({ type: 'remove', productId: line.productId })}
                     />
                   ))}
                 </ul>

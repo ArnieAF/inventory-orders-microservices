@@ -113,7 +113,13 @@ public class RestInventoryClient implements InventoryClient {
         throw classifyError(status, body);
     }
 
-    /** 409 INSUFFICIENT_STOCK/PRODUCT_INACTIVE y 404 NOT_FOUND se propagan; todo lo demas es 503. */
+    /**
+     * Solo se propagan 409 INSUFFICIENT_STOCK/PRODUCT_INACTIVE y 404 NOT_FOUND, y unicamente si el cuerpo trae el
+     * formato de error comun (contrato, seccion 5) con ese {@code code}: un 404 sin ese cuerpo (URL base
+     * equivocada, proxy) es un fallo de infraestructura y acaba en 503. Cualquier otro codigo de inventario
+     * (incluidos 409 INVALID_STATUS_TRANSITION y 400 VALIDATION_ERROR al re-reservar un orderRef) tambien es 503:
+     * nunca se reenvian tal cual, porque un 409 INVALID_STATUS_TRANSITION confundiria con una transicion de pedido.
+     */
     private ApiException classifyError(int status, byte[] body) {
         String code = null;
         List<Map<String, Object>> details = null;
@@ -121,9 +127,8 @@ public class RestInventoryClient implements InventoryClient {
             // BigDecimal para los decimales: los details se reenvian sin pasar por double.
             JsonNode root = objectMapper.reader().with(DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS)
                     .readTree(body);
-            if (root != null && root.isObject()) {
-                JsonNode codeNode = root.get("code");
-                code = codeNode != null && codeNode.isTextual() ? codeNode.asText() : null;
+            if (isCommonErrorFormat(root, status)) {
+                code = root.get("code").asText();
                 details = sanitizeDetails(root.get("details"));
             }
         } catch (IOException ignored) {
@@ -143,9 +148,27 @@ public class RestInventoryClient implements InventoryClient {
                     "One or more products were not found", details);
         }
         // 401/403 apuntan a una INTERNAL_API_KEY mal configurada: se registra, pero al cliente solo llega un 503.
-        log.warn("Inventory reserve answered HTTP {} (unexpected)", status);
-        // 5xx: la reserva pudo completarse en inventario. 4xx inesperado: inventario no la acepto.
+        log.warn("Inventory reserve answered HTTP {} with code {} (not propagated)", status, loggable(code));
+        // 503 SERVICE_UNAVAILABLE en formato comun: inventario agoto su timeout de bloqueo/transaccion (4 s, antes
+        // que nuestros 5 s de lectura) y revirtio la reserva: fallo claro, no hay nada que compensar a ciegas.
+        if (status == 503 && "SERVICE_UNAVAILABLE".equals(code)) {
+            return new InventoryUnavailableException(false, null);
+        }
+        // Otros 5xx (o sin cuerpo reconocible): la reserva pudo completarse. 4xx inesperado: no se acepto.
         return new InventoryUnavailableException(status >= 500, null);
+    }
+
+    /** Formato comun: objeto con {@code status} igual al HTTP, {@code code} y {@code message} de texto. */
+    private static boolean isCommonErrorFormat(JsonNode root, int httpStatus) {
+        return root != null && root.isObject()
+                && root.path("status").isInt() && root.path("status").asInt() == httpStatus
+                && root.path("code").isTextual() && !root.path("code").asText().isBlank()
+                && root.path("message").isTextual();
+    }
+
+    /** Solo se registran codigos con forma de codigo (MAYUSCULAS_Y_GUIONES_BAJOS): nada de texto libre ajeno. */
+    private static String loggable(String code) {
+        return code != null && code.matches("[A-Z_]{1,40}") ? code : "n/a";
     }
 
     /** Copia acotada de {@code details}: solo objetos planos de escalares, con limites de tamano. */

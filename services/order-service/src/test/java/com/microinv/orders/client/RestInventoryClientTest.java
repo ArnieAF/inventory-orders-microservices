@@ -18,6 +18,7 @@ import java.util.stream.IntStream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /** Contra un servidor HTTP real: cabeceras, cuerpo, propagacion de 409/404, 503 generico y timeouts de verdad. */
 class RestInventoryClientTest {
@@ -89,25 +90,118 @@ class RestInventoryClientTest {
         }
     }
 
+    /** Contrato 6.2: NOT_FOUND y PRODUCT_INACTIVE llevan {@code details:[{productId, message}]}. */
     @Test
-    void productInactiveAndNotFoundArePropagated() throws Exception {
-        String details = "[{\"productId\":\"" + PRODUCT + "\"}]";
+    void productInactiveAndNotFoundArePropagatedWithTheDetailsInventoryEmits() throws Exception {
+        String details = "[{\"productId\":\"" + PRODUCT + "\",\"message\":\"Product is inactive\"}]";
         try (StubServer server = StubServer.start(r -> StubServer.Response.of(409,
                 error(409, "PRODUCT_INACTIVE", details)))) {
             assertThatThrownBy(() -> client(server.baseUrl()).reserve(ORDER, ITEMS))
                     .isInstanceOfSatisfying(InventoryRejectedException.class, e -> {
                         assertThat(e.status().value()).isEqualTo(409);
                         assertThat(e.code()).isEqualTo(ErrorCode.PRODUCT_INACTIVE);
-                        assertThat(e.details().get(0)).containsEntry("productId", PRODUCT.toString());
+                        assertThat(e.details()).hasSize(1);
+                        assertThat(e.details().get(0)).containsOnly(
+                                java.util.Map.entry("productId", PRODUCT.toString()),
+                                java.util.Map.entry("message", "Product is inactive"));
                     });
         }
+        String notFoundDetails = "[{\"productId\":\"" + PRODUCT + "\",\"message\":\"Product not found\"}]";
         try (StubServer server = StubServer.start(r -> StubServer.Response.of(404,
-                error(404, "NOT_FOUND", details)))) {
+                error(404, "NOT_FOUND", notFoundDetails)))) {
             assertThatThrownBy(() -> client(server.baseUrl()).reserve(ORDER, ITEMS))
                     .isInstanceOfSatisfying(InventoryRejectedException.class, e -> {
                         assertThat(e.status().value()).isEqualTo(404);
                         assertThat(e.code()).isEqualTo(ErrorCode.NOT_FOUND);
+                        assertThat(e.details().get(0)).containsOnly(
+                                java.util.Map.entry("productId", PRODUCT.toString()),
+                                java.util.Map.entry("message", "Product not found"));
                     });
+        }
+    }
+
+    @Test
+    void notFoundWithoutDetailsIsStillPropagated() throws Exception {
+        try (StubServer server = StubServer.start(r -> StubServer.Response.of(404, error(404, "NOT_FOUND", null)))) {
+            assertThatThrownBy(() -> client(server.baseUrl()).reserve(ORDER, ITEMS))
+                    .isInstanceOfSatisfying(InventoryRejectedException.class, e -> {
+                        assertThat(e.code()).isEqualTo(ErrorCode.NOT_FOUND);
+                        assertThat(e.details()).isNull();
+                    });
+        }
+    }
+
+    /** Un 404 que no es del servicio de inventario (URL base equivocada, proxy) no puede pasar por NOT_FOUND. */
+    @ParameterizedTest(name = "404 body={0} -> 503")
+    @ValueSource(strings = {"", "<html><body>404 Not Found</body></html>", "{}", "not json",
+            "{\"status\":404,\"error\":\"Not Found\",\"path\":\"/internal/stock/reserve\"}",
+            "{\"code\":\"NOT_FOUND\"}",
+            "{\"status\":404,\"code\":\"NOT_FOUND\"}",
+            "{\"status\":200,\"code\":\"NOT_FOUND\",\"message\":\"x\"}",
+            "{\"status\":\"404\",\"code\":\"NOT_FOUND\",\"message\":\"x\"}",
+            "{\"status\":404,\"code\":404,\"message\":\"x\"}"})
+    void a404WithoutTheCommonErrorBodyIsUnavailableNotNotFound(String body) throws Exception {
+        try (StubServer server = StubServer.start(r -> StubServer.Response.of(404, body))) {
+            assertThatThrownBy(() -> client(server.baseUrl()).reserve(ORDER, ITEMS))
+                    .isInstanceOfSatisfying(InventoryUnavailableException.class, e -> {
+                        assertThat(e.status().value()).isEqualTo(503);
+                        assertThat(e.code()).isEqualTo(ErrorCode.SERVICE_UNAVAILABLE);
+                        assertThat(e.isOutcomeUnknown()).isFalse();
+                    });
+        }
+    }
+
+    /**
+     * Respuestas REALES de inventory al re-reservar un orderRef (contrato 6.2): no se propagan, ni siquiera como
+     * 409: un INVALID_STATUS_TRANSITION de inventario se confundiria con una transicion de pedido.
+     */
+    @Test
+    void inventoryReReserveErrorsAreNeverForwardedAsTheirOwnCode() throws Exception {
+        String released = "{\"timestamp\":\"2026-11-05T12:00:00Z\",\"status\":409,\"code\":\"INVALID_STATUS_TRANSITION\","
+                + "\"message\":\"Order reference was already released\",\"path\":\"/internal/stock/reserve\"}";
+        String differentItems = "{\"timestamp\":\"2026-11-05T12:00:00Z\",\"status\":400,\"code\":\"VALIDATION_ERROR\","
+                + "\"message\":\"Validation failed\",\"path\":\"/internal/stock/reserve\","
+                + "\"details\":[{\"field\":\"items\",\"message\":\"orderRef was already reserved with different items\"}]}";
+        try (StubServer server = StubServer.start(r -> StubServer.Response.of(409, released))) {
+            assertThatThrownBy(() -> client(server.baseUrl()).reserve(ORDER, ITEMS))
+                    .isInstanceOfSatisfying(InventoryUnavailableException.class, e -> {
+                        assertThat(e.status().value()).isEqualTo(503);
+                        assertThat(e.code()).isEqualTo(ErrorCode.SERVICE_UNAVAILABLE);
+                        assertThat(e.getMessage()).doesNotContain("released").doesNotContain("INVALID");
+                        assertThat(e.details()).isNull();
+                    });
+        }
+        try (StubServer server = StubServer.start(r -> StubServer.Response.of(400, differentItems))) {
+            assertThatThrownBy(() -> client(server.baseUrl()).reserve(ORDER, ITEMS))
+                    .isInstanceOfSatisfying(InventoryUnavailableException.class, e -> {
+                        assertThat(e.status().value()).isEqualTo(503);
+                        assertThat(e.details()).isNull();
+                    });
+        }
+    }
+
+    /**
+     * 503 SERVICE_UNAVAILABLE de inventory (timeout de bloqueo de 4 s, con Retry-After) en formato comun: la reserva
+     * se revirtio, resultado CLARO, no incierto: no se compensa a ciegas. Un 503 sin ese cuerpo (proxy, caida)
+     * si es incierto.
+     */
+    @Test
+    void inventoryLockTimeout503IsAClearFailureButAnOpaque503IsUncertain() throws Exception {
+        String clear = error(503, "SERVICE_UNAVAILABLE", null);
+        try (StubServer server = StubServer.start(r -> StubServer.Response.withRetryAfter(503, clear, "1"))) {
+            assertThatThrownBy(() -> client(server.baseUrl()).reserve(ORDER, ITEMS))
+                    .isInstanceOfSatisfying(InventoryUnavailableException.class, e -> {
+                        assertThat(e.isOutcomeUnknown()).isFalse();
+                        assertThat(e.status().value()).isEqualTo(503);
+                    });
+        }
+        for (String opaque : new String[] {"", "<html>Service Unavailable</html>", "{\"status\":503}"}) {
+            try (StubServer server = StubServer.start(r -> StubServer.Response.of(503, opaque))) {
+                assertThatThrownBy(() -> client(server.baseUrl()).reserve(ORDER, ITEMS))
+                        .as("body: %s", opaque)
+                        .isInstanceOfSatisfying(InventoryUnavailableException.class,
+                                e -> assertThat(e.isOutcomeUnknown()).isTrue());
+            }
         }
     }
 
@@ -132,11 +226,12 @@ class RestInventoryClientTest {
             "403, FORBIDDEN, false",
             "404, SOMETHING_ELSE, false",
             "409, SKU_ALREADY_EXISTS, false",
+            "409, INVALID_STATUS_TRANSITION, false",
             "409, NOT_FOUND, false",
             "404, INSUFFICIENT_STOCK, false",
             "500, INTERNAL_ERROR, true",
             "502, BAD_GATEWAY, true",
-            "503, SERVICE_UNAVAILABLE, true"})
+            "503, INTERNAL_ERROR, true"})
     void anyOtherErrorStatusIsUnavailable(int status, String code, boolean outcomeUnknown) throws Exception {
         try (StubServer server = StubServer.start(r -> StubServer.Response.of(status, error(status, code, null)))) {
             assertThatThrownBy(() -> client(server.baseUrl()).reserve(ORDER, ITEMS))
@@ -173,12 +268,29 @@ class RestInventoryClientTest {
         }
     }
 
+    /** X-Internal-Key jamas viaja a otra URL: un 3xx no se sigue (ni siquiera con Location valido) y es un fallo. */
+    @ParameterizedTest(name = "HTTP {0} with Location is not followed")
+    @ValueSource(ints = {301, 302, 303, 307, 308})
+    void redirectsAreNeverFollowedAndTheInternalKeyNeverReachesAnotherUrl(int status) throws Exception {
+        try (StubServer elsewhere = StubServer.start(r -> StubServer.Response.of(200, "{\"items\":[]}"));
+                StubServer server = StubServer.start(
+                        r -> StubServer.Response.redirect(status, elsewhere.baseUrl() + "/internal/stock/reserve"))) {
+            RestInventoryClient client = client(server.baseUrl());
+
+            assertThatThrownBy(() -> client.reserve(ORDER, ITEMS)).isInstanceOf(InventoryUnavailableException.class);
+            assertThatThrownBy(() -> client.release(ORDER)).isInstanceOf(InventoryUnavailableException.class);
+
+            assertThat(server.requests).hasSize(2); // reserve y release: una peticion cada una, sin reintentos
+            assertThat(elsewhere.requests).isEmpty(); // la otra URL no recibio nada (ni la clave)
+        }
+    }
+
     @Test
-    void redirectsAreNotFollowed() throws Exception {
-        try (StubServer server = StubServer.start(r -> StubServer.Response.of(307, ""))) {
+    void anUnfollowedRedirectOnReserveIsAClearFailure() throws Exception {
+        try (StubServer server = StubServer.start(r -> StubServer.Response.redirect(307, "http://127.0.0.1:1/x"))) {
             assertThatThrownBy(() -> client(server.baseUrl()).reserve(ORDER, ITEMS))
-                    .isInstanceOf(InventoryUnavailableException.class);
-            assertThat(server.requests).hasSize(1);
+                    .isInstanceOfSatisfying(InventoryUnavailableException.class,
+                            e -> assertThat(e.isOutcomeUnknown()).isFalse());
         }
     }
 

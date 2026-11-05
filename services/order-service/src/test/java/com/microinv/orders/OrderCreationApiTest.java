@@ -217,15 +217,17 @@ class OrderCreationApiTest extends AbstractApiTest {
     @Test
     void propagatesNotFoundFromInventoryAndStoresNothing() throws Exception {
         UUID productId = UUID.randomUUID();
+        // Forma real de inventory (contrato 6.2): details:[{productId, message}]
         when(inventory.reserve(any(), anyList())).thenThrow(new InventoryRejectedException(HttpStatus.NOT_FOUND,
                 ErrorCode.NOT_FOUND, "One or more products were not found",
-                List.of(Map.of("productId", productId.toString()))));
+                List.of(Map.of("productId", productId.toString(), "message", "Product not found"))));
 
         mvc.perform(authed(post("/api/orders")).contentType(MediaType.APPLICATION_JSON)
                         .content(order("ACME", item(productId, 1))))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("NOT_FOUND"))
-                .andExpect(jsonPath("$.details[0].productId").value(productId.toString()));
+                .andExpect(jsonPath("$.details[0].productId").value(productId.toString()))
+                .andExpect(jsonPath("$.details[0].message").value("Product not found"));
 
         assertThat(orderCount()).isZero();
         verifyNoInteractions(notifications);
@@ -236,13 +238,14 @@ class OrderCreationApiTest extends AbstractApiTest {
         UUID productId = UUID.randomUUID();
         when(inventory.reserve(any(), anyList())).thenThrow(new InventoryRejectedException(HttpStatus.CONFLICT,
                 ErrorCode.PRODUCT_INACTIVE, "One or more products are inactive",
-                List.of(Map.of("productId", productId.toString()))));
+                List.of(Map.of("productId", productId.toString(), "message", "Product is inactive"))));
 
         mvc.perform(authed(post("/api/orders")).contentType(MediaType.APPLICATION_JSON)
                         .content(order("ACME", item(productId, 1))))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("PRODUCT_INACTIVE"))
-                .andExpect(jsonPath("$.details[0].productId").value(productId.toString()));
+                .andExpect(jsonPath("$.details[0].productId").value(productId.toString()))
+                .andExpect(jsonPath("$.details[0].message").value("Product is inactive"));
 
         assertThat(orderCount()).isZero();
         verifyNoInteractions(notifications);
@@ -458,11 +461,14 @@ class OrderCreationApiTest extends AbstractApiTest {
     }
 
     @Test
-    void rejectsWrongContentType() throws Exception {
+    void wrongContentTypeIs415WithValidationErrorCodeLikeTheOtherServices() throws Exception {
         mvc.perform(authed(post("/api/orders")).contentType(MediaType.TEXT_PLAIN)
                         .content(order("X", item(SOME_PRODUCT, 1))))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+                .andExpect(status().isUnsupportedMediaType())
+                .andExpect(jsonPath("$.status").value(415))
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.path").value("/api/orders"))
+                .andExpect(jsonPath("$.message").value("Unsupported Media Type"));
         verifyNoInteractions(inventory);
     }
 

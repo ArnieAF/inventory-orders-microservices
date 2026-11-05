@@ -3,6 +3,7 @@ package com.microinv.orders.client;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.ConnectException;
+import java.net.HttpURLConnection;
 import java.net.NoRouteToHostException;
 import java.net.SocketTimeoutException;
 import java.net.UnknownHostException;
@@ -20,12 +21,24 @@ final class InternalHttp {
     private InternalHttp() {
     }
 
-    /** RestClient con timeouts de conexion y lectura y sin seguir redirecciones en POST. */
+    /**
+     * RestClient con timeouts de conexion y lectura y SIN seguir nunca redirecciones: una respuesta 3xx se trata
+     * como fallo, de modo que {@code X-Internal-Key} jamas viaja a otra URL.
+     */
     static RestClient restClient(String baseUrl, int connectTimeoutMs, int readTimeoutMs) {
-        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
+        SimpleClientHttpRequestFactory factory = new NoRedirectRequestFactory();
         factory.setConnectTimeout(connectTimeoutMs);
         factory.setReadTimeout(readTimeoutMs);
         return RestClient.builder().baseUrl(baseUrl).requestFactory(factory).build();
+    }
+
+    /** Fuerza {@code setInstanceFollowRedirects(false)} con independencia del metodo HTTP y de la version de Spring. */
+    private static final class NoRedirectRequestFactory extends SimpleClientHttpRequestFactory {
+        @Override
+        protected void prepareConnection(HttpURLConnection connection, String httpMethod) throws IOException {
+            super.prepareConnection(connection, httpMethod);
+            connection.setInstanceFollowRedirects(false);
+        }
     }
 
     static byte[] readLimited(InputStream in) throws IOException {

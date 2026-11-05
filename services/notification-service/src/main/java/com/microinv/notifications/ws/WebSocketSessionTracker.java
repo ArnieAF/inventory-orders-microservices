@@ -3,6 +3,8 @@ package com.microinv.notifications.ws;
 import java.security.Principal;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ScheduledFuture;
@@ -24,9 +26,13 @@ public class WebSocketSessionTracker {
 
     private static final Logger log = LoggerFactory.getLogger(WebSocketSessionTracker.class);
 
+    /** Máximo de suscripciones simultáneas por conexión (un cliente legítimo usa 2: difusión y cola propia). */
+    public static final int MAX_SUBSCRIPTIONS_PER_SESSION = 10;
+
     private static final class Entry {
         private volatile Principal principal;
         private volatile ScheduledFuture<?> timeout;
+        private final Set<String> subscriptions = new HashSet<>();
     }
 
     private final ConcurrentMap<String, Entry> sessions = new ConcurrentHashMap<>();
@@ -79,6 +85,33 @@ public class WebSocketSessionTracker {
             timeout.cancel(false);
         }
         return true;
+    }
+
+    /**
+     * Registra una suscripción de la sesión.
+     *
+     * @return {@code false} si la sesión es desconocida o ya tiene {@link #MAX_SUBSCRIPTIONS_PER_SESSION}
+     *         suscripciones (repetir un identificador ya registrado no cuenta de nuevo)
+     */
+    public boolean addSubscription(String sessionId, String subscriptionId) {
+        Entry entry = sessionId == null ? null : sessions.get(sessionId);
+        if (entry == null) {
+            return false;
+        }
+        synchronized (entry.subscriptions) {
+            return entry.subscriptions.contains(subscriptionId)
+                    || (entry.subscriptions.size() < MAX_SUBSCRIPTIONS_PER_SESSION
+                    && entry.subscriptions.add(subscriptionId));
+        }
+    }
+
+    public void removeSubscription(String sessionId, String subscriptionId) {
+        Entry entry = sessionId == null ? null : sessions.get(sessionId);
+        if (entry != null && subscriptionId != null) {
+            synchronized (entry.subscriptions) {
+                entry.subscriptions.remove(subscriptionId);
+            }
+        }
     }
 
     /** Principal autenticado de la sesión, o {@code null} si aún no hizo un CONNECT válido. */

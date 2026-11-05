@@ -14,6 +14,7 @@ public class StompSecurityException extends MessagingException {
     public static final String ALREADY_CONNECTED = "Already connected";
     public static final String DESTINATION_NOT_ALLOWED = "Destination not allowed";
     public static final String OPERATION_NOT_ALLOWED = "Operation not allowed";
+    public static final String TOO_MANY_SUBSCRIPTIONS = "Too many subscriptions";
 
     public StompSecurityException(String publicMessage) {
         super(publicMessage);

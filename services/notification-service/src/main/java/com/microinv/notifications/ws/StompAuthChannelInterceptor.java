@@ -21,7 +21,8 @@ import org.springframework.security.oauth2.jwt.JwtDecoder;
  *   <li>{@code CONNECT}/{@code STOMP}: exige {@code Authorization: Bearer <jwt>} válido (misma validación que REST);
  *       fija como Principal el {@code sub}. Un segundo CONNECT en la misma sesión se rechaza.</li>
  *   <li>{@code SUBSCRIBE}: solo con sesión autenticada y solo a {@link StompDestinations#BROADCAST_TOPIC} o
- *       {@link StompDestinations#USER_QUEUE_SUBSCRIPTION}.</li>
+ *       {@link StompDestinations#USER_QUEUE_SUBSCRIPTION}, con un tope de
+ *       {@link WebSocketSessionTracker#MAX_SUBSCRIPTIONS_PER_SESSION} suscripciones por conexión.</li>
  *   <li>{@code UNSUBSCRIBE}: con sesión autenticada. {@code DISCONNECT} y latidos: siempre.</li>
  *   <li>{@code SEND} y cualquier otro comando (ACK, NACK, BEGIN, COMMIT, ABORT): rechazados. No hay destinos de
  *       aplicación y, sin este bloqueo, un cliente podría publicar directamente en {@code /topic/...}.</li>
@@ -34,6 +35,7 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
     private static final Logger log = LoggerFactory.getLogger(StompAuthChannelInterceptor.class);
     private static final String AUTHORIZATION = "Authorization";
     private static final String BEARER_PREFIX = "Bearer ";
+    private static final int MAX_SUBSCRIPTION_ID_LENGTH = 64;
 
     private final JwtDecoder jwtDecoder;
     private final WebSocketSessionTracker tracker;
@@ -60,7 +62,10 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
         switch (command) {
             case CONNECT, STOMP -> authenticate(accessor);
             case SUBSCRIBE -> authorizeSubscription(accessor);
-            case UNSUBSCRIBE -> requireSession(accessor);
+            case UNSUBSCRIBE -> {
+                requireSession(accessor);
+                tracker.removeSubscription(accessor.getSessionId(), accessor.getSubscriptionId());
+            }
             case DISCONNECT -> {
                 // Siempre permitido (también lo genera Spring al cerrarse la sesión).
             }
@@ -101,6 +106,14 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
         Principal principal = requireSession(accessor);
         if (!StompDestinations.isSubscribable(accessor.getDestination())) {
             throw reject(accessor, StompSecurityException.DESTINATION_NOT_ALLOWED);
+        }
+        String subscriptionId = accessor.getSubscriptionId();
+        if (subscriptionId == null || subscriptionId.isBlank() || subscriptionId.length() > MAX_SUBSCRIPTION_ID_LENGTH) {
+            throw reject(accessor, StompSecurityException.OPERATION_NOT_ALLOWED);
+        }
+        // Tope de suscripciones por conexión: evita que un cliente autenticado acumule miles en el broker.
+        if (!tracker.addSubscription(accessor.getSessionId(), subscriptionId)) {
+            throw reject(accessor, StompSecurityException.TOO_MANY_SUBSCRIPTIONS);
         }
         // El usuario de la suscripción sale de nuestro registro, no de lo que traiga el frame.
         accessor.setUser(principal);

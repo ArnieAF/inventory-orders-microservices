@@ -214,6 +214,64 @@ class StompAuthChannelInterceptorTest {
                 .doesNotThrowAnyException();
     }
 
+    private Message<byte[]> subscription(StompCommand command, String subscriptionId, String destination) {
+        StompHeaderAccessor accessor = StompHeaderAccessor.create(command);
+        accessor.setSessionId(SESSION);
+        if (destination != null) {
+            accessor.setDestination(destination);
+        }
+        if (subscriptionId != null) {
+            accessor.setSubscriptionId(subscriptionId);
+        }
+        accessor.setLeaveMutable(true);
+        return MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
+    }
+
+    @Test
+    void aConnectionCannotAccumulateSubscriptions() {
+        connectAsUser();
+        int max = WebSocketSessionTracker.MAX_SUBSCRIPTIONS_PER_SESSION;
+        for (int i = 0; i < max; i++) {
+            interceptor.preSend(subscription(StompCommand.SUBSCRIBE, "s" + i, StompDestinations.BROADCAST_TOPIC),
+                    channel);
+        }
+        // Repetir un identificador ya registrado no ocupa otro hueco.
+        assertThatCode(() -> interceptor.preSend(
+                subscription(StompCommand.SUBSCRIBE, "s0", StompDestinations.BROADCAST_TOPIC), channel))
+                .doesNotThrowAnyException();
+        assertRejected(() -> interceptor.preSend(
+                subscription(StompCommand.SUBSCRIBE, "one-too-many", StompDestinations.BROADCAST_TOPIC), channel),
+                StompSecurityException.TOO_MANY_SUBSCRIPTIONS);
+
+        // Cancelar una suscripción libera su hueco.
+        interceptor.preSend(subscription(StompCommand.UNSUBSCRIBE, "s3", null), channel);
+        assertThatCode(() -> interceptor.preSend(
+                subscription(StompCommand.SUBSCRIBE, "one-too-many", StompDestinations.USER_QUEUE_SUBSCRIPTION),
+                channel)).doesNotThrowAnyException();
+    }
+
+    @Test
+    void theSubscriptionLimitIsPerConnection() {
+        connectAsUser();
+        open("session-2");
+        for (int i = 0; i < WebSocketSessionTracker.MAX_SUBSCRIPTIONS_PER_SESSION; i++) {
+            interceptor.preSend(subscription(StompCommand.SUBSCRIBE, "s" + i, StompDestinations.BROADCAST_TOPIC),
+                    channel);
+        }
+        assertThat(tracker.addSubscription("session-2", "s0")).isTrue();
+    }
+
+    @Test
+    void subscribeWithoutAUsableIdIsRejected() {
+        connectAsUser();
+        assertRejected(() -> interceptor.preSend(
+                subscription(StompCommand.SUBSCRIBE, null, StompDestinations.BROADCAST_TOPIC), channel),
+                StompSecurityException.OPERATION_NOT_ALLOWED);
+        assertRejected(() -> interceptor.preSend(
+                subscription(StompCommand.SUBSCRIBE, "x".repeat(65), StompDestinations.BROADCAST_TOPIC), channel),
+                StompSecurityException.OPERATION_NOT_ALLOWED);
+    }
+
     // ---- SEND y el resto: denegado por defecto
 
     @ParameterizedTest

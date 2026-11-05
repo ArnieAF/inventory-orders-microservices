@@ -1,0 +1,63 @@
+server:
+  port: 8082
+  shutdown: graceful
+  error:
+    whitelabel:
+      enabled: false
+    include-message: never
+    include-binding-errors: never
+    include-stacktrace: never
+    include-exception: false
+
+spring:
+  application:
+    name: inventory-service
+  lifecycle:
+    timeout-per-shutdown-phase: 20s
+  web:
+    # Mensajes de validacion siempre en ingles (contrato 5), sin depender de Accept-Language.
+    locale: en
+    locale-resolver: fixed
+  # La conexion (SPRING_DATASOURCE_URL / _USERNAME / _PASSWORD) llega solo por entorno:
+  # no hay valores por defecto ni credenciales en este archivo.
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: none
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+  jackson:
+    deserialization:
+      # Una cantidad como 1.5 debe dar 400, no truncarse en silencio a 1.
+      accept-float-as-int: false
+    generator:
+      write-bigdecimal-as-plain: true
+    serialization:
+      write-dates-as-timestamps: false
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+      show-components: never
+
+app:
+  security:
+    # Sin valores por defecto inseguros: si faltan o son cortos, el arranque FALLA (ver SecurityProperties).
+    jwt-secret: ${JWT_SECRET:}
+    jwt-issuer: ${JWT_ISSUER:micro-inventory}
+    internal-api-key: ${INTERNAL_API_KEY:}
+  notifications:
+    base-url: ${NOTIFICATION_SERVICE_URL:http://notification-service:8084}
+    connect-timeout: 2s
+    read-timeout: 5s
+    async: true

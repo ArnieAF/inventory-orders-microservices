@@ -14,8 +14,6 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
@@ -25,17 +23,13 @@ import org.springframework.test.web.servlet.MockMvc;
  * notificaciones simulado (no hay red) y limpieza de tablas antes de cada prueba. Todas las clases
  * comparten la misma configuracion para reutilizar un unico contexto de Spring.
  */
-@SpringBootTest
+@SpringBootTest(properties = {
+        "app.security.jwt-secret=" + TestSecrets.JWT_SECRET,
+        "app.security.jwt-issuer=" + TestSecrets.JWT_ISSUER,
+        "app.security.internal-api-key=" + TestSecrets.INTERNAL_KEY})
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 public abstract class AbstractIntegrationTest {
-
-    @DynamicPropertySource
-    static void secrets(DynamicPropertyRegistry registry) {
-        registry.add("app.security.jwt-secret", () -> TestSecrets.JWT_SECRET);
-        registry.add("app.security.jwt-issuer", () -> TestSecrets.JWT_ISSUER);
-        registry.add("app.security.internal-api-key", () -> TestSecrets.INTERNAL_KEY);
-    }
 
     @MockitoBean
     protected NotificationClient notificationClient;

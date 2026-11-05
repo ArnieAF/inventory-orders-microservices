@@ -13,6 +13,16 @@ public record SecurityProperties(String jwtSecret, String jwtIssuer, String inte
     public static final int MIN_JWT_SECRET_LENGTH = 32;
 
     public SecurityProperties {
+        validate(jwtSecret, jwtIssuer, internalApiKey);
+    }
+
+    /**
+     * Reglas de arranque. Las comprueba tambien {@link SecurityConfigurationPostProcessor} antes de crear
+     * ningun bean, para que este error salga el primero aunque falte otra configuracion (p. ej. la BD).
+     *
+     * @throws IllegalArgumentException con un mensaje claro y sin incluir los valores
+     */
+    public static void validate(String jwtSecret, String jwtIssuer, String internalApiKey) {
         if (jwtSecret == null || jwtSecret.isBlank() || jwtSecret.length() < MIN_JWT_SECRET_LENGTH) {
             throw new IllegalArgumentException(
                     "JWT_SECRET must be set and have at least " + MIN_JWT_SECRET_LENGTH + " characters");

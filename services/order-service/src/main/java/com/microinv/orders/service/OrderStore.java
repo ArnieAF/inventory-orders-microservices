@@ -6,6 +6,7 @@ import com.microinv.orders.domain.OrderStatus;
 import com.microinv.orders.dto.OrderSummaryResponse;
 import com.microinv.orders.dto.OrdersSummaryResponse;
 import com.microinv.orders.error.ApiException;
+import com.microinv.orders.error.OrderModifiedConcurrentlyException;
 import com.microinv.orders.repository.OrderRepository;
 import com.microinv.orders.security.CurrentUser;
 import java.time.Instant;
@@ -41,6 +42,10 @@ public class OrderStore {
     public record TransitionPlan(long expectedVersion, OrderStatus from) {
     }
 
+    /** Estado actual y version de un pedido, sin validar ninguna transicion. */
+    public record OrderState(OrderStatus status, long version) {
+    }
+
     @Transactional
     public OrderEntity persistNew(UUID id, String customerName, String notes, List<OrderLine> lines,
                                   CurrentUser user) {
@@ -60,6 +65,13 @@ public class OrderStore {
         return new TransitionPlan(order.getVersion(), order.getStatus());
     }
 
+    /** Relectura del estado y la version vigentes (404 si no existe). */
+    @Transactional(readOnly = true)
+    public OrderState currentState(UUID id) {
+        OrderEntity order = repository.findById(id).orElseThrow(OrderStore::notFound);
+        return new OrderState(order.getStatus(), order.getVersion());
+    }
+
     /**
      * Confirma el cambio de estado. Si otro proceso modifico el pedido desde {@link #planTransition}
      * (version distinta o conflicto de {@code @Version} al escribir) se responde 409 INVALID_STATUS_TRANSITION:
@@ -69,7 +81,7 @@ public class OrderStore {
     public OrderEntity applyTransition(UUID id, long expectedVersion, OrderStatus target, CurrentUser actor) {
         OrderEntity order = repository.findWithItemsById(id).orElseThrow(OrderStore::notFound);
         if (order.getVersion() != expectedVersion) {
-            throw ApiException.invalidTransition("Order was modified concurrently; reload it and try again");
+            throw new OrderModifiedConcurrentlyException();
         }
         OrderStatus from = order.getStatus();
         if (!from.canTransitionTo(target)) {

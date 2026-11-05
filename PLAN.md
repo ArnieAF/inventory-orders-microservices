@@ -52,21 +52,29 @@ Archivos compartidos (`PLAN.md`, `docs/`, `.gitignore`, `README.md`) los edita s
 
 Ciclo: construir → revisar (auditores Fable con 3 lentes: seguridad, UX, corrección) → corregir → integrar en `develop` (`--no-ff`) → verificar el conjunto (tests de cada servicio en Docker, `docker compose build/up`, prueba de humo, typecheck/lint/test/build del frontend).
 
-## Estado
+## Estado (2026-11-05)
 | Fase | Estado |
 |---|---|
 | 0. Plan + contrato + repo | ✅ hecho |
-| 1. Construcción en paralelo | ⏳ pendiente |
-| 2. Revisión (3 lentes) | ⏳ pendiente |
-| 3. Corrección | ⏳ pendiente |
-| 4. Integración + verificación del conjunto | ⏳ pendiente |
-| 5. Informe + pruebas del usuario | ⏳ pendiente |
+| 1. Construcción en paralelo (6 ramas) | ✅ hecho |
+| 2. Revisión independiente (3 lentes) | 🟡 4 de 6 revisiones completas con verificación adversarial (orders, inventory, auth-service, api-gateway). notification-service y frontend: solo los revisores iniciales (sin verificación adversarial), la revisión se interrumpió por límite de uso |
+| 3. Corrección | 🟡 orders, inventory y auth-service corregidos e integrados en `develop`. Pendiente: api-gateway (9 puntos), notification-service y frontend (ver [docs/NEXT-STEPS.md](docs/NEXT-STEPS.md)) |
+| 4. Integración + verificación del conjunto | 🟡 el stack completo con lo ya corregido pasa la prueba de humo (58/58, directo y vía nginx). Falta repetirla tras las correcciones pendientes |
+| 5. Informe + prueba manual del usuario | ⏳ pendiente |
+
+Continuidad y lista priorizada de pendientes: [`docs/NEXT-STEPS.md`](docs/NEXT-STEPS.md).
 
 ## Registro de modelos
 | Tarea | Modelo | Cómo se supo |
 |---|---|---|
-| Plan, contrato, integración | Sonnet 5.5 (orquestador) | Indicado por el entorno de la sesión |
-| _(se rellena al cerrar cada fase)_ | | |
+| Plan, contrato, integración, verificación | Sonnet 5.5 (orquestador) | Indicado por el entorno de la sesión |
+| auth-service, api-gateway, inventory-service, order-service, notification-service (construcción y correcciones) | Sonnet 5.5 | Modelo fijado en la definición del agente `rol-backend`; los commits llevan `Co-Authored-By: Claude Sonnet 5.5` |
+| frontend (React/TS/Tailwind, nginx) | Opus 5.5 | Modelo fijado en la definición del agente `rol-frontend`; commits con `Co-Authored-By: Claude Opus 5.5` |
+| docker-compose, .env.example, scripts de entorno y tests | Haiku 5.5 | Modelo fijado en la definición del agente `rol-mecanico`; commit con `Co-Authored-By: Claude Haiku 5.5` |
+| Revisión independiente (auditores y verificadores) | Fable | Parámetro de lanzamiento `model: fable` de los agentes de revisión; no hay otra confirmación del modelo real |
 
 ## Qué NO está verificado
-_(se actualiza al cerrar cada fase)_
+- Uso manual en navegadores y dispositivos reales, lectores de pantalla, rendimiento y carga.
+- Las correcciones de inventory y auth-service se ejecutaron en Docker (194 y 81 tests) y contra Postgres 16 real en la prueba de humo, pero la concurrencia fina (carreras reserva/liberación) solo se prueba con H2 en los tests.
+- Una primera ejecución independiente de los tests de inventory y auth-service dio BUILD FAILURE sin que se llegara a conocer la causa; dos repeticiones posteriores pasaron. Se sospecha fragilidad por carga (tests con timeouts), sin confirmar.
+- Revisión de notification-service y frontend sin verificación adversarial.

@@ -94,11 +94,12 @@ Sin refresh tokens, recuperación de contraseña, roles finos, rate limiting, br
 
 ## Estado del proyecto
 
-**Versión preliminar (pre-revisión).**
+**Versión preliminar: funciona de extremo a extremo, con correcciones de revisión todavía en curso.**
 
-- **Verificado ejecutando:** el stack completo (4 PostgreSQL 16 reales + 5 servicios + nginx) levanta sano en Docker y la prueba de humo de 55 comprobaciones pasa tanto contra el gateway como a través de nginx. Cada servicio trae su propia suite de pruebas (JUnit con H2 en modo PostgreSQL + Flyway; Vitest en el frontend).
-- **En curso:** una revisión independiente (seguridad, UX/accesibilidad y corrección) ya encontró defectos reales, sobre todo condiciones de carrera en la reserva/cancelación de stock, y sus correcciones se están aplicando. Los resúmenes irán a `docs/`.
-- **No verificado todavía:** uso manual en navegadores y dispositivos reales, lectores de pantalla, rendimiento/carga, y ejecución repetida de todas las suites tras las correcciones.
+- **Verificado ejecutando:** el stack completo (4 PostgreSQL 16 reales + 5 servicios + nginx) levanta sano en Docker y la prueba de humo de 58 comprobaciones pasa tanto contra el gateway como a través de nginx. Los tests de order-service (375), inventory-service (194) y auth-service (81) se repitieron en Docker durante la integración. Cada servicio trae su propia suite (JUnit con H2 en modo PostgreSQL + Flyway; Vitest en el frontend).
+- **Revisión independiente:** una revisión de seguridad, UX/accesibilidad y corrección encontró defectos reales, sobre todo condiciones de carrera en la reserva/cancelación de stock. Ya están corregidos e integrados order-service, inventory-service y auth-service; **faltan** api-gateway, notification-service y frontend.
+- **Pendientes y siguiente paso:** lista priorizada con archivo y causa en [`docs/NEXT-STEPS.md`](docs/NEXT-STEPS.md).
+- **No verificado todavía:** uso manual en navegadores y dispositivos reales, lectores de pantalla, rendimiento/carga, y la ejecución repetida de las suites de gateway, notificaciones y frontend tras sus correcciones.
 
 Plan, decisiones y reparto del trabajo: [`PLAN.md`](PLAN.md).
 

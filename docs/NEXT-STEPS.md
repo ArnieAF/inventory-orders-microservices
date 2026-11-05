@@ -2,7 +2,7 @@
 
 Documento de continuidad para quien retome el proyecto (persona o asistente de IA) **sin el contexto de las sesiones anteriores**. Léelo junto a [`README.md`](../README.md), [`PLAN.md`](../PLAN.md) y [`CONTRACT.md`](CONTRACT.md) (el contrato es la fuente de verdad).
 
-Última actualización: 2026-11-05.
+Última actualización: 2026-11-05. Prompt listo para pegar en una IA y pasos de prueba manual: [`PROMPT-CONTINUAR.md`](PROMPT-CONTINUAR.md).
 
 ## 1. Línea base: comprueba que todo funciona antes de tocar nada
 

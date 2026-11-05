@@ -4,9 +4,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.not;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.startsWith;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -17,6 +20,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.microinv.auth.user.AuthService;
 import com.microinv.auth.user.UserAccount;
 import com.microinv.auth.user.UserRepository;
 import java.time.Instant;
@@ -31,6 +35,7 @@ import org.springframework.http.MediaType;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.oauth2.jwt.JwtException;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
@@ -49,6 +54,7 @@ class AuthApiTest {
     @Autowired UserRepository users;
     @Autowired JwtDecoder jwtDecoder;
     @MockitoSpyBean PasswordEncoder passwordEncoder;
+    @MockitoSpyBean AuthService authService;
 
     @BeforeEach
     void cleanDatabase() {
@@ -161,10 +167,20 @@ class AuthApiTest {
                 {"bad<script>", "ok@example.com", PASSWORD, "username"},
                 {"acentuadoñ", "ok@example.com", PASSWORD, "username"},
                 {"ok_user", "not-an-email", PASSWORD, "email"},
+                // Email: solo ASCII imprimible (contrato 6.1). 120 caracteres con "İ" (I con punto): paso el
+                // @Size sobre el valor crudo, pero toLowerCase lo alargaba a 121 y la BD lanzaba 22001 -> 500.
+                {"ok_user", "İ" + "a".repeat(58) + "@" + "b".repeat(56) + ".com", PASSWORD, "email"},
+                {"ok_user", "josé@example.com", PASSWORD, "email"},
+                {"ok_user", "user@exämple.com", PASSWORD, "email"},
+                {"ok_user", "ıstanbul@example.com", PASSWORD, "email"},
+                {"ok_user", "\"a b\"@example.com", PASSWORD, "email"},
+                {"ok_user", "a b@example.com", PASSWORD, "email"},
                 {"ok_user", "", PASSWORD, "email"},
                 {"ok_user", longEmail, PASSWORD, "email"},
                 {"ok_user", "ok@example.com", "1234567", "password"},
+                {"ok_user", "ok@example.com", "€€", "password"}, // 6 bytes (< 8)
                 {"ok_user", "ok@example.com", "a".repeat(73), "password"},
+                {"ok_user", "ok@example.com", "€".repeat(24) + "a", "password"}, // 73 bytes con solo 25 caracteres
                 // 40 caracteres de 3 bytes = 120 bytes UTF-8 (> 72): BCrypt los truncaria o fallaria
                 {"ok_user", "ok@example.com", "€".repeat(40), "password"},
                 {null, "ok@example.com", PASSWORD, "username"},
@@ -182,9 +198,44 @@ class AuthApiTest {
     }
 
     @Test
+    void register_mensajeDeContrasena_dejaClaroQueSonBytes() throws Exception {
+        // 40 caracteres de 3 bytes (120 bytes) y 7 bytes: el detalle indica el limite en BYTES, no en caracteres.
+        for (String password : new String[] {"\u20ac".repeat(40), "1234567"}) {
+            register("msg_user", "msg@example.com", password)
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.details[?(@.field=='password')].message").value(hasItem(containsString("bytes"))))
+                    .andExpect(content().string(not(containsString("\u20ac"))));
+        }
+        postJson("/api/auth/register", "{\"username\":\"msg_user\",\"email\":\"msg@example.com\"}")
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.details[*].field").value(hasItem("password")));
+    }
+
+    @Test
+    void register_emailAsciiDe120_es201_yConIMayusculaConPunto_es400_nuncaUn500() throws Exception {
+        String ascii120 = "a".repeat(60) + "@" + "b".repeat(55) + ".com";
+        assertThat(ascii120).hasSize(120);
+        register("ascii120", ascii120, PASSWORD).andExpect(status().isCreated());
+
+        // Mismo largo (120) pero con "\u0130": toLowerCase lo alarga a 121 caracteres. Debe ser 400, jamas 500.
+        String dotted = "\u0130" + "a".repeat(58) + "@" + "b".repeat(56) + ".com";
+        assertThat(dotted).hasSize(120);
+        assertThat(dotted.toLowerCase(java.util.Locale.ROOT).length()).isGreaterThan(120);
+        register("dotted", dotted, PASSWORD)
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.details[*].field").value(hasItem("email")));
+        assertThat(users.findByUsername("dotted")).isEmpty();
+    }
+
+    @Test
     void register_limitesExactosSonValidos() throws Exception {
         register("a".repeat(32), "a".repeat(60) + "@" + "b".repeat(55) + ".com", "p".repeat(72)).andExpect(status().isCreated()); // email = 120 exactos
         register("abc", "min@example.com", "12345678").andExpect(status().isCreated());
+        // El contrato mide la contrasena en BYTES UTF-8 (8-72), no en caracteres:
+        register("bytes72", "bytes72@example.com", "\u20ac".repeat(24)).andExpect(status().isCreated()); // 72 bytes, 24 chars
+        register("bytes72b", "bytes72b@example.com", "\u00e9".repeat(36)).andExpect(status().isCreated()); // 72 bytes, 36 chars
+        register("bytes8", "bytes8@example.com", "\u20ac\u20acab").andExpect(status().isCreated()); // 8 bytes, solo 4 chars
         register("Z.z-9_", "dots@example.com", PASSWORD).andExpect(status().isCreated());
     }
 
@@ -300,30 +351,54 @@ class AuthApiTest {
         assertErrorFormat(mvc.perform(get("/api/auth/me")), 401, "UNAUTHORIZED");
     }
 
-    @Test
-    void me_tokenCaducado_401() throws Exception {
-        JsonNode registered = registerOk("karl", "karl@example.com");
-        String expired = TestJwt.expired(registered.at("/user/id").asText(), "karl");
-        assertErrorFormat(mvc.perform(get("/api/auth/me").header(HttpHeaders.AUTHORIZATION, "Bearer " + expired)),
+    /**
+     * Token RECHAZADO por el validador (no "usuario no encontrado"): el decoder lanza JwtException, la
+     * respuesta es 401 y la peticion nunca llega al servicio. Distingue este caso del de un token valido
+     * cuyo usuario ya no existe (que SI llega al servicio).
+     */
+    private void assertRejectedByTokenValidation(String token) throws Exception {
+        assertThatThrownBy(() -> jwtDecoder.decode(token)).isInstanceOf(JwtException.class);
+        assertErrorFormat(mvc.perform(get("/api/auth/me").header(HttpHeaders.AUTHORIZATION, "Bearer " + token)),
                 401, "UNAUTHORIZED");
+        verify(authService, never()).findCurrent(any());
     }
 
     @Test
-    void me_tokenManipulado_401() throws Exception {
+    void me_tokenCaducado_rechazadoPorElValidador_401() throws Exception {
+        JsonNode registered = registerOk("karl", "karl@example.com");
+        assertRejectedByTokenValidation(TestJwt.expired(registered.at("/user/id").asText(), "karl"));
+    }
+
+    @Test
+    void me_tokenSinExp_rechazadoPorElValidador_401() throws Exception {
+        // Contrato 3: todos los validadores exigen exp. Un token firmado y "eterno" no vale.
+        JsonNode registered = registerOk("noexp", "noexp@example.com");
+        String id = registered.at("/user/id").asText();
+        String noExp = TestJwt.mint(TestJwt.SECRET, TestJwt.ISSUER, id, "noexp", Instant.now(), null);
+        assertRejectedByTokenValidation(noExp);
+        // Control: el mismo token con exp SI es aceptado.
+        String withExp = TestJwt.mint(TestJwt.SECRET, TestJwt.ISSUER, id, "noexp", Instant.now(),
+                Instant.now().plusSeconds(600));
+        mvc.perform(get("/api/auth/me").header(HttpHeaders.AUTHORIZATION, "Bearer " + withExp))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void me_tokenManipulado_rechazadoPorElValidador_401() throws Exception {
         JsonNode registered = registerOk("laura", "laura@example.com");
         String token = registered.get("accessToken").asText();
-        String tampered = TestJwt.tamperPayload(token, "\"username\":\"laura\"", "\"username\":\"admin\"");
-        assertErrorFormat(mvc.perform(get("/api/auth/me").header(HttpHeaders.AUTHORIZATION, "Bearer " + tampered)),
-                401, "UNAUTHORIZED");
-        // Firma truncada / basura
-        mvc.perform(get("/api/auth/me").header(HttpHeaders.AUTHORIZATION, "Bearer " + token.substring(0, token.length() - 4)))
-                .andExpect(status().isUnauthorized());
-        mvc.perform(get("/api/auth/me").header(HttpHeaders.AUTHORIZATION, "Bearer no.es.un.jwt"))
-                .andExpect(status().isUnauthorized());
+        assertRejectedByTokenValidation(
+                TestJwt.tamperPayload(token, "\"username\":\"laura\"", "\"username\":\"admin\""));
+        assertRejectedByTokenValidation(token.substring(0, token.length() - 4)); // firma truncada
+        assertRejectedByTokenValidation("no.es.un.jwt");
+        // Control: el token original SI es aceptado y llega al servicio.
+        mvc.perform(get("/api/auth/me").header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+                .andExpect(status().isOk());
+        verify(authService).findCurrent(UUID.fromString(registered.at("/user/id").asText()));
     }
 
     @Test
-    void me_tokenFirmadoConOtroSecreto_ConOtroEmisor_oSinFirma_401() throws Exception {
+    void me_tokenFirmadoConOtroSecreto_ConOtroEmisor_oSinFirma_rechazadoPorElValidador() throws Exception {
         JsonNode registered = registerOk("mallory", "mallory@example.com");
         String id = registered.at("/user/id").asText();
         Instant now = Instant.now();
@@ -333,24 +408,41 @@ class AuthApiTest {
         String noIssuer = TestJwt.mint(TestJwt.SECRET, null, id, "mallory", now, now.plusSeconds(600));
         String noSubject = TestJwt.mint(TestJwt.SECRET, TestJwt.ISSUER, null, "mallory", now, now.plusSeconds(600));
         for (String bad : new String[] {otherSecret, otherIssuer, noIssuer, noSubject, TestJwt.unsigned(id, "mallory")}) {
-            mvc.perform(get("/api/auth/me").header(HttpHeaders.AUTHORIZATION, "Bearer " + bad))
-                    .andExpect(status().isUnauthorized())
-                    .andExpect(jsonPath("$.code").value("UNAUTHORIZED"));
+            assertRejectedByTokenValidation(bad);
         }
     }
 
     @Test
-    void me_tokenValidoDeUsuarioInexistente_401() throws Exception {
-        String token = TestJwt.valid(UUID.randomUUID().toString(), "ghost");
+    void me_tokenValidoDeUsuarioInexistente_llegaAlServicio_y_da401() throws Exception {
+        UUID ghost = UUID.randomUUID();
+        String token = TestJwt.valid(ghost.toString(), "ghost");
+        // El validador LO ACEPTA (no lanza)...
+        assertThat(jwtDecoder.decode(token).getSubject()).isEqualTo(ghost.toString());
+        // ...y el 401 lo produce la busqueda del usuario, no el validador.
         assertErrorFormat(mvc.perform(get("/api/auth/me").header(HttpHeaders.AUTHORIZATION, "Bearer " + token)),
                 401, "UNAUTHORIZED");
+        verify(authService).findCurrent(ghost);
     }
 
     @Test
-    void me_subNoEsUuid_401() throws Exception {
+    void me_tokenValidoDeUsuarioBorrado_llegaAlServicio_y_da401() throws Exception {
+        JsonNode registered = registerOk("deleted", "deleted@example.com");
+        String token = registered.get("accessToken").asText();
+        UUID id = UUID.fromString(registered.at("/user/id").asText());
+        users.deleteById(id);
+        assertErrorFormat(mvc.perform(get("/api/auth/me").header(HttpHeaders.AUTHORIZATION, "Bearer " + token)),
+                401, "UNAUTHORIZED");
+        verify(authService).findCurrent(id);
+    }
+
+    @Test
+    void me_subNoEsUuid_validadorLoAcepta_peroElControladorDa401_sinConsultarElServicio() throws Exception {
         String token = TestJwt.valid("no-es-un-uuid", "x");
+        assertThat(jwtDecoder.decode(token).getSubject()).isEqualTo("no-es-un-uuid");
         mvc.perform(get("/api/auth/me").header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
-                .andExpect(status().isUnauthorized());
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("UNAUTHORIZED"));
+        verify(authService, never()).findCurrent(any());
     }
 
     @Test

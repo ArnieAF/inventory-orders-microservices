@@ -22,9 +22,13 @@ public final class TestJwt {
 
     public static String mint(String secret, String issuer, String subject, String username, Instant iat, Instant exp) {
         try {
-            JWTClaimsSet.Builder claims = new JWTClaimsSet.Builder()
-                    .issueTime(Date.from(iat))
-                    .expirationTime(Date.from(exp));
+            JWTClaimsSet.Builder claims = new JWTClaimsSet.Builder();
+            if (iat != null) {
+                claims.issueTime(Date.from(iat));
+            }
+            if (exp != null) {
+                claims.expirationTime(Date.from(exp)); // null = token SIN exp
+            }
             if (issuer != null) {
                 claims.issuer(issuer);
             }

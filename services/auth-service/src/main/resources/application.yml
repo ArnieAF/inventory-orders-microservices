@@ -24,6 +24,12 @@ spring:
   jackson:
     default-property-inclusion: non_null
 
+# Hibernate registra el mensaje de la BD ante un UNIQUE/CHECK, y ese mensaje incluye el valor en conflicto
+# (email). El error ya se traduce a 409/500 generico; el detalle no debe acabar en los logs.
+logging:
+  level:
+    org.hibernate.engine.jdbc.spi.SqlExceptionHelper: "OFF"
+
 management:
   endpoints:
     web:

@@ -32,6 +32,9 @@ public class ApiErrorController implements ErrorController {
         } else if (value == 401) {
             code = ErrorCode.UNAUTHORIZED;
             message = code.defaultMessage();
+        } else if (value == 503) {
+            code = ErrorCode.SERVICE_UNAVAILABLE;
+            message = code.defaultMessage();
         } else if (value >= 500) {
             code = ErrorCode.INTERNAL_ERROR;
             message = code.defaultMessage();

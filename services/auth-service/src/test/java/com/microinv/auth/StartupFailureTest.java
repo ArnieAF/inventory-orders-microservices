@@ -6,6 +6,8 @@ import static org.assertj.core.api.Assertions.catchThrowable;
 import com.microinv.auth.config.InvalidJwtConfigurationException;
 import com.microinv.auth.config.InvalidJwtConfigurationFailureAnalyzer;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.diagnostics.FailureAnalysis;
 
@@ -83,6 +85,29 @@ class StartupFailureTest {
         InvalidJwtConfigurationException cause = rootInvalidJwt(failure);
         assertThat(cause).isNotNull();
         assertThat(cause.getMessage()).contains("JWT_EXPIRATION_MINUTES");
+    }
+
+    private static Throwable startWithExpiration(String minutes) {
+        SpringApplication app = new SpringApplication(AuthServiceApplication.class);
+        return catchThrowable(() -> app.run(
+                "--server.port=0",
+                "--spring.profiles.active=test",
+                "--spring.datasource.url=jdbc:h2:mem:startupexp;MODE=PostgreSQL;DB_CLOSE_DELAY=-1",
+                "--app.jwt.expiration-minutes=" + minutes).close());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"0", "-1", "10081", "99999999"})
+    void expiracionFueraDeRango1a10080_elArranqueFalla_conMensajeClaro(String minutes) {
+        InvalidJwtConfigurationException cause = rootInvalidJwt(startWithExpiration(minutes));
+        assertThat(cause).as("JWT_EXPIRATION_MINUTES=%s debe impedir el arranque", minutes).isNotNull();
+        assertThat(cause.getMessage()).contains("JWT_EXPIRATION_MINUTES").contains("1").contains("10080");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"1", "10080"})
+    void expiracionEnLosLimitesDelRango_arranca(String minutes) {
+        assertThat(startWithExpiration(minutes)).isNull();
     }
 
     @Test

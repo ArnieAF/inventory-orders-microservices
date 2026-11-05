@@ -162,7 +162,7 @@ services:
       ROUTE_NOTIFICATION_URI: http://notification-service:8084
       ROUTE_NOTIFICATION_WS_URI: ws://notification-service:8084
     ports:
-      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:${GATEWAY_PORT:-8080}:8080"
     depends_on:
       auth-service:
         condition: service_healthy
@@ -184,7 +184,7 @@ services:
       - no-new-privileges:true
     build: ./frontend
     ports:
-      - "127.0.0.1:3000:8080"
+      - "127.0.0.1:${FRONTEND_PORT:-3000}:8080"
     depends_on:
       api-gateway:
         condition: service_healthy

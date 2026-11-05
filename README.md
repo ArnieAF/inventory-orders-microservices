@@ -61,7 +61,7 @@ docker compose up -d --build
 
 Parar: `docker compose down` (añade `-v` para borrar también los datos).
 
-> Los puertos 3000 y 8080 deben estar libres en tu máquina.
+> **Puertos:** por defecto se usan 3000 (web) y 8080 (API), solo en `127.0.0.1`. Si alguno está ocupado (por ejemplo por un servidor de desarrollo de Next.js o Vite), cambia `FRONTEND_PORT` / `GATEWAY_PORT` en tu `.env` y añade el nuevo origen a `ALLOWED_ORIGINS`. Ojo: si otra aplicación escucha en 3000 por IPv6, `http://localhost:3000` puede mostrar *esa* aplicación; prueba con `http://127.0.0.1:3000` o cambia el puerto.
 
 ## Pruebas
 

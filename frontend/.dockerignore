@@ -1,0 +1,16 @@
+node_modules
+dist
+coverage
+.vite
+*.tsbuildinfo
+npm-debug.log*
+.env
+.env.*
+.git
+.gitignore
+.vscode
+.idea
+.DS_Store
+Thumbs.db
+Dockerfile
+.dockerignore

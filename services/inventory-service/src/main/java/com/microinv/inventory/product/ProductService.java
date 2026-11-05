@@ -5,6 +5,7 @@ import com.microinv.inventory.error.ApiException;
 import com.microinv.inventory.error.ApiException.StockShortage;
 import com.microinv.inventory.stock.LowStockEvent;
 import com.microinv.inventory.stock.LowStockPolicy;
+import com.microinv.inventory.stock.StockLimits;
 import com.microinv.inventory.stock.StockMovement;
 import com.microinv.inventory.stock.StockMovementRepository;
 import java.util.List;
@@ -116,13 +117,17 @@ public class ProductService {
     public ProductResponse adjustStock(UUID id, StockAdjustmentRequest request, UUID actorUserId) {
         Product product = lockActive(id);
         int delta = request.delta();
+        // Defensa en profundidad (el DTO ya lo valida): con |delta| acotado, -delta y stock+delta no desbordan.
+        if (delta == 0 || Math.abs((long) delta) > StockLimits.MAX_ABS_DELTA) {
+            throw ApiException.validation("delta", "must be non-zero and at most 1000000000 in absolute value");
+        }
         int before = product.getStock();
         long after = (long) before + delta;
         if (after < 0) {
             throw ApiException.insufficientStock(List.of(new StockShortage(id, -delta, before)));
         }
-        if (after > Integer.MAX_VALUE) {
-            throw ApiException.validation("delta", "resulting stock exceeds the maximum allowed");
+        if (after > StockLimits.MAX_STOCK) {
+            throw ApiException.validation("delta", "resulting stock must be at most 1000000000");
         }
         product.changeStock((int) after);
         movements.save(StockMovement.adjustment(id, delta, request.reason().trim()));

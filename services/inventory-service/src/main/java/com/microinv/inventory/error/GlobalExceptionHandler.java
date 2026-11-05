@@ -7,6 +7,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.TypeMismatchException;
 import org.springframework.dao.ConcurrencyFailureException;
+import org.springframework.dao.DataAccessResourceFailureException;
+import org.springframework.dao.QueryTimeoutException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
@@ -14,6 +16,8 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.lang.Nullable;
+import org.springframework.transaction.CannotCreateTransactionException;
+import org.springframework.transaction.TransactionTimedOutException;
 import org.springframework.validation.FieldError;
 import org.springframework.validation.ObjectError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -47,13 +51,21 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     }
 
     /**
-     * Fallos transitorios de concurrencia (interbloqueo perdido, timeout de bloqueo, bloqueo optimista):
-     * la operacion no se aplico y se puede reintentar. 503 en vez de 500 para que el llamante lo trate
-     * como "servicio temporalmente no disponible".
+     * Fallos transitorios: la operacion NO se aplico y se puede reintentar (el stock queda intacto porque todo va
+     * en una transaccion). Incluye interbloqueo perdido, timeout de bloqueo de fila (PostgreSQL
+     * {@code lock_timeout}, SQLState 55P03), timeout de consulta o de transaccion (los 4 s de reserve/release),
+     * bloqueo optimista y base de datos/pool no disponibles. 503 {@code SERVICE_UNAVAILABLE} con
+     * {@code Retry-After}, en vez de 500, para que el llamante lo trate como "servicio temporalmente no disponible".
      */
-    @ExceptionHandler(ConcurrencyFailureException.class)
-    public ResponseEntity<Object> handleConcurrencyFailure(ConcurrencyFailureException ex, WebRequest request) {
-        log.warn("Transient concurrency failure ({})", ex.getClass().getSimpleName());
+    @ExceptionHandler({ConcurrencyFailureException.class, QueryTimeoutException.class,
+            TransactionTimedOutException.class, CannotCreateTransactionException.class,
+            DataAccessResourceFailureException.class})
+    public ResponseEntity<Object> handleTransientFailure(Exception ex, WebRequest request) {
+        log.warn("Transient failure, returning 503 ({})", ex.getClass().getSimpleName());
+        return serviceUnavailable(request);
+    }
+
+    private ResponseEntity<Object> serviceUnavailable(WebRequest request) {
         return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
                 .header(HttpHeaders.RETRY_AFTER, "1")
                 .contentType(MediaType.APPLICATION_JSON)
@@ -113,13 +125,16 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         if (status == null) {
             status = statusCode.is5xxServerError() ? HttpStatus.INTERNAL_SERVER_ERROR : HttpStatus.BAD_REQUEST;
         }
-        ErrorCode code = status == HttpStatus.NOT_FOUND ? ErrorCode.NOT_FOUND
-                : status.is5xxServerError() ? ErrorCode.INTERNAL_ERROR : ErrorCode.VALIDATION_ERROR;
+        if (status == HttpStatus.SERVICE_UNAVAILABLE) {
+            // p. ej. AsyncRequestTimeoutException: es "no disponible", no un error interno.
+            log.warn("Framework reported 503 ({})", ex.getClass().getSimpleName());
+            return serviceUnavailable(request);
+        }
         if (status.is5xxServerError()) {
             log.error("Framework error", ex);
+            return build(status, ErrorCode.INTERNAL_ERROR, "Unexpected error", request, null);
         }
-        return build(status, code, status.is5xxServerError() ? "Unexpected error" : status.getReasonPhrase(),
-                request, null);
+        return build(status, ErrorCode.forStatus(status), status.getReasonPhrase(), request, null);
     }
 
     private ResponseEntity<Object> build(HttpStatus status, ErrorCode code, String message, WebRequest request,

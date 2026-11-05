@@ -23,4 +23,18 @@ public enum ErrorCode {
     public HttpStatus status() {
         return status;
     }
+
+    /** Codigo del contrato para un estado HTTP generado por el framework o el contenedor. */
+    public static ErrorCode forStatus(HttpStatus status) {
+        if (status == HttpStatus.NOT_FOUND) {
+            return NOT_FOUND;
+        }
+        if (status == HttpStatus.UNAUTHORIZED) {
+            return UNAUTHORIZED;
+        }
+        if (status == HttpStatus.SERVICE_UNAVAILABLE) {
+            return SERVICE_UNAVAILABLE;
+        }
+        return status.is5xxServerError() ? INTERNAL_ERROR : VALIDATION_ERROR;
+    }
 }

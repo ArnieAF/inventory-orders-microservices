@@ -46,9 +46,13 @@ async function api(method, path, { token, body, headers = {} } = {}) {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // --- Cliente STOMP mínimo sobre WebSocket nativo --------------------------------------------
-function stompConnect(token) {
+// Un navegador siempre envía `Origin`; sin él, el cliente Netty del gateway inventa el del servicio destino
+// (http://notification-service:8084) y el guardián de Origin lo rechaza. Se simula el del frontend.
+const WS_ORIGIN = process.env.WS_ORIGIN ?? 'http://localhost:3000';
+
+function stompConnect(token, origin = WS_ORIGIN) {
   return new Promise((resolve, reject) => {
-    const ws = new WebSocket(WS_URL);
+    const ws = new WebSocket(WS_URL, { headers: { Origin: origin } });
     const received = [];
     let connected = false;
     let closed = false;
@@ -109,9 +113,9 @@ function stompConnect(token) {
   });
 }
 
-async function connectFails(token) {
+async function connectFails(token, origin) {
   try {
-    const c = await stompConnect(token);
+    const c = await stompConnect(token, origin);
     c.close();
     return false;
   } catch {
@@ -291,6 +295,7 @@ async function main() {
   console.log('\n[7] WebSocket: autenticación');
   check('CONNECT sin token es rechazado', await connectFails(undefined));
   check('CONNECT con token manipulado es rechazado', await connectFails(tokA.slice(0, -4) + 'AAAA'));
+  check('handshake desde un Origin no permitido es rechazado (aunque el token sea válido)', await connectFails(tokA, 'http://evil.example'));
   sockA.close();
   sockB.close();
 

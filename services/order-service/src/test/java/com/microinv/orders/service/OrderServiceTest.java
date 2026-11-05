@@ -15,7 +15,14 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.microinv.orders.client.InventoryClient;
+import com.microinv.orders.error.OrderModifiedConcurrentlyException;
+import org.junit.jupiter.api.AfterEach;
+import org.slf4j.LoggerFactory;
 import com.microinv.orders.client.ReserveResult;
 import com.microinv.orders.client.ReservedItem;
 import com.microinv.orders.domain.OrderEntity;
@@ -50,12 +57,22 @@ class OrderServiceTest {
     private InventoryClient inventory;
     private OrderStore store;
     private OrderService service;
+    private final Logger serviceLogger = (Logger) LoggerFactory.getLogger(OrderService.class);
+    private ListAppender<ILoggingEvent> logs;
 
     @BeforeEach
     void setUp() {
         inventory = mock(InventoryClient.class);
         store = mock(OrderStore.class);
         service = new OrderService(inventory, store);
+        logs = new ListAppender<>();
+        logs.start();
+        serviceLogger.addAppender(logs);
+    }
+
+    @AfterEach
+    void detachLogAppender() {
+        serviceLogger.detachAppender(logs);
     }
 
     private static CreateOrderRequest request() {
@@ -219,16 +236,147 @@ class OrderServiceTest {
         verifyNoInteractions(inventory);
     }
 
+    // ---- cancelacion con stock ya liberado y conflicto de version ---------------------------------------------------
+
+    private void planCancellationFromVersion(UUID id, long version, OrderStatus from) {
+        when(store.planTransition(id, OrderStatus.CANCELLED)).thenReturn(new OrderStore.TransitionPlan(version, from));
+    }
+
+    private List<String> errorLogs() {
+        return logs.list.stream().filter(e -> e.getLevel() == Level.ERROR)
+                .map(ILoggingEvent::getFormattedMessage).toList();
+    }
+
     @Test
-    void concurrencyFailureWhileConfirmingACancellationPropagates() {
+    void ifAnotherRequestAlreadyCancelledTheOrderTheResultIsAnIdempotentSuccess() {
         UUID id = UUID.randomUUID();
-        when(store.planTransition(id, OrderStatus.CANCELLED))
-                .thenReturn(new OrderStore.TransitionPlan(0L, OrderStatus.PENDING));
-        when(store.applyTransition(any(), anyLong(), any(), any()))
+        planCancellationFromVersion(id, 0L, OrderStatus.PENDING);
+        when(store.applyTransition(eq(id), eq(0L), eq(OrderStatus.CANCELLED), eq(USER)))
+                .thenThrow(new OrderModifiedConcurrentlyException());
+        when(store.currentState(id)).thenReturn(new OrderStore.OrderState(OrderStatus.CANCELLED, 1L));
+        when(store.get(id)).thenReturn(entity(id));
+
+        OrderResponse response = service.changeStatus(id, OrderStatus.CANCELLED, USER);
+
+        assertThat(response.id()).isEqualTo(id);
+        verify(inventory, times(1)).release(id);
+        verify(store, times(1)).applyTransition(any(), anyLong(), any(), any()); // sin segundo intento
+        assertThat(errorLogs()).isEmpty();
+    }
+
+    @Test
+    void ifTheOrderChangedButIsStillCancellableItRetriesWithTheNewVersionWithoutRepeatingTheRelease() {
+        UUID id = UUID.randomUUID();
+        planCancellationFromVersion(id, 0L, OrderStatus.PENDING);
+        when(store.applyTransition(eq(id), eq(0L), eq(OrderStatus.CANCELLED), eq(USER)))
                 .thenThrow(new OptimisticLockingFailureException("stale"));
+        when(store.currentState(id)).thenReturn(new OrderStore.OrderState(OrderStatus.CONFIRMED, 1L));
+        when(store.applyTransition(eq(id), eq(1L), eq(OrderStatus.CANCELLED), eq(USER))).thenReturn(entity(id));
+
+        OrderResponse response = service.changeStatus(id, OrderStatus.CANCELLED, USER);
+
+        assertThat(response.id()).isEqualTo(id);
+        verify(inventory, times(1)).release(id); // el release es idempotente y ya se hizo
+        InOrder order = inOrder(store);
+        order.verify(store).applyTransition(id, 0L, OrderStatus.CANCELLED, USER);
+        order.verify(store).currentState(id);
+        order.verify(store).applyTransition(id, 1L, OrderStatus.CANCELLED, USER);
+        assertThat(errorLogs()).isEmpty();
+    }
+
+    @Test
+    void retriesAreBoundedToTwoAndTheExhaustedCaseIsLoggedAsReconciliationError() {
+        UUID id = UUID.randomUUID();
+        planCancellationFromVersion(id, 0L, OrderStatus.PENDING);
+        when(store.applyTransition(eq(id), anyLong(), eq(OrderStatus.CANCELLED), eq(USER)))
+                .thenThrow(new OrderModifiedConcurrentlyException());
+        when(store.currentState(id)).thenReturn(new OrderStore.OrderState(OrderStatus.CONFIRMED, 1L),
+                new OrderStore.OrderState(OrderStatus.CONFIRMED, 2L),
+                new OrderStore.OrderState(OrderStatus.CONFIRMED, 3L));
 
         assertThatThrownBy(() -> service.changeStatus(id, OrderStatus.CANCELLED, USER))
-                .isInstanceOf(OptimisticLockingFailureException.class);
-        verify(inventory).release(id);
+                .isInstanceOfSatisfying(ApiException.class, e -> {
+                    assertThat(e.status()).isEqualTo(HttpStatus.CONFLICT);
+                    assertThat(e.code()).isEqualTo(ErrorCode.INVALID_STATUS_TRANSITION);
+                });
+
+        assertThat(OrderService.MAX_CANCEL_RETRIES).isEqualTo(2);
+        verify(store, times(3)).applyTransition(any(), anyLong(), any(), any()); // 1 intento + 2 reintentos
+        verify(inventory, times(1)).release(id);
+        assertThat(errorLogs()).singleElement().satisfies(message -> {
+            assertThat(message).contains(id.toString()).contains("stock released but order still active");
+        });
+    }
+
+    @Test
+    void ifTheOrderIsNoLongerCancellableTheReconciliationErrorIsLoggedAndTheConflictIsKept() {
+        for (OrderStatus status : List.of(OrderStatus.SHIPPED, OrderStatus.DELIVERED)) {
+            logs.list.clear();
+            UUID id = UUID.randomUUID();
+            planCancellationFromVersion(id, 0L, OrderStatus.CONFIRMED);
+            when(store.applyTransition(eq(id), anyLong(), eq(OrderStatus.CANCELLED), eq(USER)))
+                    .thenThrow(new OptimisticLockingFailureException("stale"));
+            when(store.currentState(id)).thenReturn(new OrderStore.OrderState(status, 5L));
+
+            assertThatThrownBy(() -> service.changeStatus(id, OrderStatus.CANCELLED, USER))
+                    .isInstanceOfSatisfying(ApiException.class, e -> {
+                        assertThat(e.status()).isEqualTo(HttpStatus.CONFLICT);
+                        assertThat(e.code()).isEqualTo(ErrorCode.INVALID_STATUS_TRANSITION);
+                        assertThat(e.getMessage()).doesNotContain("stock");
+                    });
+
+            verify(store, times(1)).applyTransition(eq(id), anyLong(), any(), any()); // no se reintenta
+            assertThat(errorLogs()).singleElement().satisfies(message -> assertThat(message)
+                    .contains(id.toString()).contains("stock released but order still active")
+                    .contains(status.name()));
+        }
+    }
+
+    @Test
+    void anyOtherFailureConfirmingAReleasedCancellationIsAlsoLoggedForReconciliation() {
+        UUID id = UUID.randomUUID();
+        planCancellationFromVersion(id, 0L, OrderStatus.PENDING);
+        when(store.applyTransition(any(), anyLong(), any(), any()))
+                .thenThrow(new org.springframework.dao.DataAccessResourceFailureException("db down"));
+
+        assertThatThrownBy(() -> service.changeStatus(id, OrderStatus.CANCELLED, USER))
+                .isInstanceOf(org.springframework.dao.DataAccessResourceFailureException.class);
+
+        verify(store, never()).currentState(any());
+        assertThat(errorLogs()).singleElement().satisfies(message -> assertThat(message)
+                .contains(id.toString()).contains("stock released but order still active"));
+    }
+
+    @Test
+    void nonCancellationConflictsAreNotRetriedNorLoggedAsReconciliation() {
+        UUID id = UUID.randomUUID();
+        when(store.planTransition(id, OrderStatus.CONFIRMED))
+                .thenReturn(new OrderStore.TransitionPlan(0L, OrderStatus.PENDING));
+        when(store.applyTransition(any(), anyLong(), any(), any())).thenThrow(new OrderModifiedConcurrentlyException());
+
+        assertThatThrownBy(() -> service.changeStatus(id, OrderStatus.CONFIRMED, USER))
+                .isInstanceOf(OrderModifiedConcurrentlyException.class);
+
+        verify(store, times(1)).applyTransition(any(), anyLong(), any(), any());
+        verifyNoInteractions(inventory);
+        assertThat(errorLogs()).isEmpty();
+    }
+
+    // ---- registro de la causa real al fallar el guardado ------------------------------------------------------
+
+    @Test
+    void theRealCauseOfASaveFailureIsLoggedAtErrorLevelWithTheFullException() {
+        reserveOk();
+        DataIntegrityViolationException cause = new DataIntegrityViolationException("constraint ck_orders_total");
+        when(store.persistNew(any(), any(), any(), anyList(), any())).thenThrow(cause);
+
+        assertThatThrownBy(() -> service.create(request(), USER)).isInstanceOf(ApiException.class);
+
+        ILoggingEvent event = logs.list.stream()
+                .filter(e -> e.getLevel() == Level.ERROR && e.getFormattedMessage().contains("could not be saved"))
+                .findFirst().orElseThrow();
+        assertThat(event.getThrowableProxy()).isNotNull();
+        assertThat(event.getThrowableProxy().getMessage()).contains("ck_orders_total");
+        assertThat(event.getThrowableProxy().getClassName()).isEqualTo(DataIntegrityViolationException.class.getName());
     }
 }

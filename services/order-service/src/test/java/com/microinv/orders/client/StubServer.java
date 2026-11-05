@@ -26,13 +26,23 @@ final class StubServer implements AutoCloseable {
         }
     }
 
-    record Response(int status, String body, long delayMs) {
+    record Response(int status, String body, long delayMs, String location, String retryAfter) {
         static Response of(int status, String body) {
-            return new Response(status, body, 0);
+            return new Response(status, body, 0, null, null);
         }
 
         static Response slow(long delayMs) {
-            return new Response(200, "{}", delayMs);
+            return new Response(200, "{}", delayMs, null, null);
+        }
+
+        /** Redireccion 3xx hacia {@code location}. */
+        static Response redirect(int status, String location) {
+            return new Response(status, "", 0, location, null);
+        }
+
+        /** Error con cabecera Retry-After (como el 503 de inventory al agotar su timeout de bloqueo). */
+        static Response withRetryAfter(int status, String body, String retryAfter) {
+            return new Response(status, body, 0, null, retryAfter);
         }
     }
 
@@ -79,6 +89,12 @@ final class StubServer implements AutoCloseable {
         }
         byte[] bytes = response.body() == null ? new byte[0] : response.body().getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().add("Content-Type", "application/json");
+        if (response.location() != null) {
+            exchange.getResponseHeaders().add("Location", response.location());
+        }
+        if (response.retryAfter() != null) {
+            exchange.getResponseHeaders().add("Retry-After", response.retryAfter());
+        }
         try {
             if (response.status() == 204) {
                 exchange.sendResponseHeaders(204, -1);

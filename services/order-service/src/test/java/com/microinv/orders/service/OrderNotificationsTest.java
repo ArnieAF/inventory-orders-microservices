@@ -23,8 +23,8 @@ class OrderNotificationsTest {
         assertThat(request.actorUserId()).isEqualTo(CREATOR);
         assertThat(request.entityType()).isEqualTo("ORDER");
         assertThat(request.entityId()).isEqualTo(ORDER);
-        assertThat(request.title()).isEqualTo("New order");
-        assertThat(request.message()).isEqualTo("Order #ABCDEF12 was created");
+        assertThat(request.title()).isEqualTo("Nuevo pedido");
+        assertThat(request.message()).isEqualTo("Se creó el pedido #ABCDEF12");
     }
 
     @Test
@@ -37,7 +37,8 @@ class OrderNotificationsTest {
         assertThat(request.actorUserId()).isEqualTo(ACTOR);
         assertThat(request.entityType()).isEqualTo("ORDER");
         assertThat(request.entityId()).isEqualTo(ORDER);
-        assertThat(request.message()).isEqualTo("Order #ABCDEF12 changed from PENDING to CONFIRMED");
+        assertThat(request.title()).isEqualTo("Estado del pedido actualizado");
+        assertThat(request.message()).isEqualTo("El pedido #ABCDEF12 pasó de PENDING a CONFIRMED");
     }
 
     @Test

@@ -37,17 +37,17 @@ class RequiredConfigEnvironmentPostProcessorTest {
 
     @Test
     void failsWhenTheJwtSecretIsMissingEmptyOrShortWithoutEchoingIt() {
-        MockEnvironment missing = new MockEnvironment().withProperty("app.internal.api-key", "k");
+        MockEnvironment missing = new MockEnvironment().withProperty("app.internal.api-key", "some-internal-key");
         assertThatThrownBy(() -> process(missing)).isInstanceOf(InvalidConfigurationException.class)
                 .hasMessageContaining("JWT_SECRET");
 
         MockEnvironment empty = new MockEnvironment().withProperty("app.jwt.secret", "")
-                .withProperty("app.internal.api-key", "k");
+                .withProperty("app.internal.api-key", "some-internal-key");
         assertThatThrownBy(() -> process(empty)).isInstanceOf(InvalidConfigurationException.class)
                 .hasMessageContaining("JWT_SECRET");
 
         MockEnvironment shortSecret = new MockEnvironment().withProperty("app.jwt.secret", "short-secret-value")
-                .withProperty("app.internal.api-key", "k");
+                .withProperty("app.internal.api-key", "some-internal-key");
         assertThatThrownBy(() -> process(shortSecret)).isInstanceOf(InvalidConfigurationException.class)
                 .hasMessageContaining("JWT_SECRET").hasMessageNotContaining("short-secret-value");
     }
@@ -62,6 +62,13 @@ class RequiredConfigEnvironmentPostProcessorTest {
                 .withProperty("app.internal.api-key", "   ");
         assertThatThrownBy(() -> process(blank)).isInstanceOf(InvalidConfigurationException.class)
                 .hasMessageContaining("INTERNAL_API_KEY");
+
+        // contrato 8: al menos 16 caracteres, y el valor nunca se imprime
+        MockEnvironment shortKey = new MockEnvironment().withProperty("app.jwt.secret", SECRET_32)
+                .withProperty("app.internal.api-key", "only-15-chars-x");
+        assertThatThrownBy(() -> process(shortKey)).isInstanceOf(InvalidConfigurationException.class)
+                .hasMessageContaining("INTERNAL_API_KEY").hasMessageContaining("16")
+                .hasMessageNotContaining("only-15-chars-x");
     }
 
     /**

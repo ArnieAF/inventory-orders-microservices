@@ -19,6 +19,9 @@ import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.http.MediaType;
 
 /** Aviso LOW_STOCK: solo al cruzar el umbral, una vez, tras el commit y sin poder romper la operacion. */
@@ -26,6 +29,12 @@ class LowStockNotificationFlowTest extends AbstractIntegrationTest {
 
     @Autowired
     private StockService stockService;
+
+    @Autowired
+    private ApplicationEventPublisher eventPublisher;
+
+    @Autowired
+    private PlatformTransactionManager transactionManager;
 
     private static ReserveRequest.Item item(UUID productId, int quantity) {
         return new ReserveRequest.Item(productId, quantity);
@@ -97,16 +106,61 @@ class LowStockNotificationFlowTest extends AbstractIntegrationTest {
         assertThat(captor.getAllValues()).extracting(NotificationRequest::entityId).containsExactlyInAnyOrder(a, b);
     }
 
+    /**
+     * OJO: este test solo comprueba el comportamiento de extremo a extremo (reserva rechazada: ni stock ni aviso).
+     * La reserva falla en la validacion, ANTES de publicar ningun evento, asi que NO demuestra que el aviso se
+     * envie despues del commit: eso lo demuestran los dos tests siguientes, que publican el evento dentro de
+     * una transaccion real.
+     */
     @Test
-    void failedReservationSendsNothingEvenIfAnEarlierLineWouldHaveCrossed() {
+    void rejectedReservationChangesNothingAndSendsNothing() {
         UUID crossing = insertProduct("LS-7A", 10, 5);
         UUID short1 = insertProduct("LS-7B", 1, 5);
 
         assertThatThrownBy(() -> stockService.reserve(UUID.randomUUID(), List.of(item(crossing, 8), item(short1, 2))))
                 .isInstanceOf(ApiException.class);
 
-        verify(notificationClient, never()).send(any()); // la transaccion no se confirmo
+        verify(notificationClient, never()).send(any());
         assertThat(stockOf(crossing)).isEqualTo(10);
+    }
+
+    private LowStockEvent sampleEvent() {
+        return new LowStockEvent(UUID.randomUUID(), "SKU-EVT", "Evento", 2, 5, null);
+    }
+
+    @Test
+    void anEventPublishedInsideATransactionThatRollsBackIsNeverSent() {
+        TransactionTemplate tx = new TransactionTemplate(transactionManager);
+
+        // rollback explicito
+        tx.executeWithoutResult(status -> {
+            eventPublisher.publishEvent(sampleEvent());
+            verify(notificationClient, never()).send(any()); // ni siquiera durante la transaccion
+            status.setRollbackOnly();
+        });
+        // rollback por excepcion
+        assertThatThrownBy(() -> tx.executeWithoutResult(status -> {
+            eventPublisher.publishEvent(sampleEvent());
+            throw new IllegalStateException("boom after publishing");
+        })).isInstanceOf(IllegalStateException.class);
+
+        verify(notificationClient, never()).send(any());
+    }
+
+    @Test
+    void anEventPublishedInsideATransactionIsSentOnlyAfterTheCommit() {
+        TransactionTemplate tx = new TransactionTemplate(transactionManager);
+        LowStockEvent event = sampleEvent();
+
+        tx.executeWithoutResult(status -> {
+            eventPublisher.publishEvent(event);
+            // La transaccion sigue abierta: aun no se ha enviado nada (AFTER_COMMIT, no "en el momento").
+            verify(notificationClient, never()).send(any());
+        });
+
+        // Ya confirmada: sale exactamente una notificacion.
+        NotificationRequest sent = singleSentNotification();
+        assertThat(sent.entityId()).isEqualTo(event.productId());
     }
 
     @Test

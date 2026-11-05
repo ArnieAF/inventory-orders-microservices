@@ -27,7 +27,8 @@ import org.springframework.transaction.event.TransactionalEventListener;
 public class LowStockNotificationListener {
 
     private static final Logger log = LoggerFactory.getLogger(LowStockNotificationListener.class);
-    private static final int QUEUE_CAPACITY = 200;
+    static final int QUEUE_CAPACITY = 200;
+    static final int MAX_THREADS = 2;
 
     private final NotificationClient client;
     private final Executor executor;
@@ -36,7 +37,7 @@ public class LowStockNotificationListener {
     public LowStockNotificationListener(NotificationClient client, NotificationProperties properties) {
         this.client = client;
         if (properties.async()) {
-            ThreadPoolExecutor tpe = new ThreadPoolExecutor(1, 2, 30, TimeUnit.SECONDS,
+            ThreadPoolExecutor tpe = new ThreadPoolExecutor(1, MAX_THREADS, 30, TimeUnit.SECONDS,
                     new ArrayBlockingQueue<>(QUEUE_CAPACITY), runnable -> {
                 Thread t = new Thread(runnable, "low-stock-notifier");
                 t.setDaemon(true);

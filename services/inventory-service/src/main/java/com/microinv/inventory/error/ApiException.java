@@ -36,9 +36,16 @@ public class ApiException extends RuntimeException {
         return new ApiException(ErrorCode.SKU_ALREADY_EXISTS, "SKU already exists", null);
     }
 
-    public static ApiException productInactive(UUID productId) {
+    /** {@code NOT_FOUND} de reserve: {@code details:[{productId, message}]} con todos los productos inexistentes. */
+    public static ApiException productsNotFound(List<UUID> productIds) {
+        return new ApiException(ErrorCode.NOT_FOUND, "Product not found",
+                productIds.stream().map(id -> new ProductDetail(id, "Product not found")).toList());
+    }
+
+    /** {@code PRODUCT_INACTIVE} de reserve: {@code details:[{productId, message}]} con todos los inactivos. */
+    public static ApiException productsInactive(List<UUID> productIds) {
         return new ApiException(ErrorCode.PRODUCT_INACTIVE, "Product is inactive",
-                List.of(new FieldDetail("productId", productId.toString())));
+                productIds.stream().map(id -> new ProductDetail(id, "Product is inactive")).toList());
     }
 
     public static ApiException insufficientStock(List<StockShortage> shortages) {
@@ -47,6 +54,10 @@ public class ApiException extends RuntimeException {
 
     public static ApiException invalidStatusTransition(String message) {
         return new ApiException(ErrorCode.INVALID_STATUS_TRANSITION, message, null);
+    }
+
+    /** Detalle de {@code NOT_FOUND} y {@code PRODUCT_INACTIVE} en reserve: {@code {productId, message}}. */
+    public record ProductDetail(UUID productId, String message) {
     }
 
     /** Detalle de {@code INSUFFICIENT_STOCK}: {@code {productId, requested, available}}. */

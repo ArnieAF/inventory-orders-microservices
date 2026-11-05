@@ -11,6 +11,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public record SecurityProperties(String jwtSecret, String jwtIssuer, String internalApiKey) {
 
     public static final int MIN_JWT_SECRET_LENGTH = 32;
+    public static final int MIN_INTERNAL_API_KEY_LENGTH = 16;
 
     public SecurityProperties {
         validate(jwtSecret, jwtIssuer, internalApiKey);
@@ -30,8 +31,10 @@ public record SecurityProperties(String jwtSecret, String jwtIssuer, String inte
         if (jwtIssuer == null || jwtIssuer.isBlank()) {
             throw new IllegalArgumentException("JWT_ISSUER must not be blank");
         }
-        if (internalApiKey == null || internalApiKey.isBlank()) {
-            throw new IllegalArgumentException("INTERNAL_API_KEY must be set");
+        if (internalApiKey == null || internalApiKey.isBlank()
+                || internalApiKey.length() < MIN_INTERNAL_API_KEY_LENGTH) {
+            throw new IllegalArgumentException(
+                    "INTERNAL_API_KEY must be set and have at least " + MIN_INTERNAL_API_KEY_LENGTH + " characters");
         }
     }
 

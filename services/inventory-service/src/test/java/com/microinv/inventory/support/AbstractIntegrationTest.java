@@ -50,6 +50,7 @@ public abstract class AbstractIntegrationTest {
     @BeforeEach
     void cleanDatabase() {
         jdbc.update("delete from stock_movements");
+        jdbc.update("delete from stock_reservations");
         jdbc.update("delete from products");
     }
 

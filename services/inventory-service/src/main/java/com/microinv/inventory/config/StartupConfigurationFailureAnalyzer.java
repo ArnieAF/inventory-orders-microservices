@@ -9,8 +9,8 @@ public class StartupConfigurationFailureAnalyzer extends AbstractFailureAnalyzer
     @Override
     protected FailureAnalysis analyze(Throwable rootFailure, StartupConfigurationException cause) {
         return new FailureAnalysis(cause.getMessage(),
-                "Set the required environment variables (JWT_SECRET with at least 32 characters, INTERNAL_API_KEY) "
-                        + "and restart the service. See docs/CONTRACT.md, section 8.",
+                "Set the required environment variables (JWT_SECRET with at least 32 characters, INTERNAL_API_KEY "
+                        + "with at least 16 characters) and restart the service. See docs/CONTRACT.md, section 8.",
                 cause);
     }
 }

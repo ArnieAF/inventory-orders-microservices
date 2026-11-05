@@ -8,8 +8,17 @@ import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataIntegrityViolationException;
 
 /**
- * Comprueba las restricciones de la migracion V1 sobre H2 (modo PostgreSQL). El mismo script se verifico
- * ademas contra PostgreSQL 16 real (ver informe): la semantica de UNIQUE con NULL debe ser identica.
+ * Comprueba las restricciones de las migraciones V1 y V2 sobre H2 (modo PostgreSQL). ESTE TEST NO EJECUTA
+ * PostgreSQL: la comprobacion contra PostgreSQL 16 real (en especial que un UNIQUE con order_ref NULL permita
+ * duplicados igual que en H2) se hizo a mano, fuera de la suite, con un contenedor efimero sin puertos:
+ * <pre>
+ * docker run --rm -v "&lt;ruta&gt;/src/main/resources/db/migration:/mig:ro" -v "&lt;ruta-script&gt;:/t:ro" postgres:16-alpine \
+ *   sh -c 'su-exec postgres initdb -D /tmp/pgdata -A trust &amp;&amp; \
+ *          su-exec postgres pg_ctl -D /tmp/pgdata -o "-c listen_addresses= -k /tmp" -w start &amp;&amp; \
+ *          psql -X -h /tmp -U postgres -f /t/verify.sql'
+ * </pre>
+ * (el script aplica V1 y V2, comprueba CHECK/UNIQUE/FK y la clave primaria de la cabecera). Si cambian las
+ * migraciones hay que repetir esa comprobacion manual.
  */
 class MigrationIntegrityTest extends AbstractIntegrationTest {
 
@@ -95,6 +104,28 @@ class MigrationIntegrityTest extends AbstractIntegrationTest {
         assertThatThrownBy(() -> insertMovement(product, 1, "BOGUS", null))
                 .isInstanceOf(DataIntegrityViolationException.class);
         assertThatThrownBy(() -> insertMovement(product, 0, "ADJUSTMENT", null))
+                .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    private void insertReservationRow(UUID orderRef, String status) {
+        jdbc.update("insert into stock_reservations (order_ref, status, created_at) "
+                + "values (?, ?, current_timestamp)", orderRef, status);
+    }
+
+    @Test
+    void reservationHeaderHasPrimaryKeyOnOrderRef() {
+        UUID order = UUID.randomUUID();
+        insertReservationRow(order, "RESERVED");
+        assertThatThrownBy(() -> insertReservationRow(order, "RELEASED"))
+                .isInstanceOf(DataIntegrityViolationException.class);
+        insertReservationRow(UUID.randomUUID(), "RELEASED");
+    }
+
+    @Test
+    void reservationStatusIsConstrainedToReservedOrReleased() {
+        assertThatThrownBy(() -> insertReservationRow(UUID.randomUUID(), "PENDING"))
+                .isInstanceOf(DataIntegrityViolationException.class);
+        assertThatThrownBy(() -> insertReservationRow(UUID.randomUUID(), "reserved"))
                 .isInstanceOf(DataIntegrityViolationException.class);
     }
 

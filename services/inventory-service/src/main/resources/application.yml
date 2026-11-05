@@ -20,6 +20,13 @@ spring:
     locale-resolver: fixed
   # La conexion (SPRING_DATASOURCE_URL / _USERNAME / _PASSWORD) llega solo por entorno:
   # no hay valores por defecto ni credenciales en este archivo.
+  datasource:
+    hikari:
+      # Timeout de bloqueo de fila MENOR que los 5 s de lectura de order-service (contrato 6.2): si una
+      # reserva/release espera demasiado un SELECT ... FOR UPDATE, inventario falla antes (503) en vez de
+      # confirmar tarde. PostgreSQL: SQLState 55P03 -> 503 SERVICE_UNAVAILABLE. Los tests (H2) lo sobreescriben
+      # con su equivalente. La conexion en si (URL/usuario/clave) llega solo por entorno.
+      connection-init-sql: SET lock_timeout = 4000
   jpa:
     open-in-view: false
     hibernate:

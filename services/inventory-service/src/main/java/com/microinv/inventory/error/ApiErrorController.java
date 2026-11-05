@@ -21,18 +21,13 @@ public class ApiErrorController implements ErrorController {
         if (status == null || !(status.is4xxClientError() || status.is5xxServerError())) {
             status = HttpStatus.INTERNAL_SERVER_ERROR;
         }
-        ErrorCode code;
-        if (status == HttpStatus.NOT_FOUND) {
-            code = ErrorCode.NOT_FOUND;
-        } else if (status == HttpStatus.UNAUTHORIZED) {
-            code = ErrorCode.UNAUTHORIZED;
-        } else if (status.is5xxServerError()) {
-            code = ErrorCode.INTERNAL_ERROR;
-        } else {
-            code = ErrorCode.VALIDATION_ERROR;
-        }
+        ErrorCode code = ErrorCode.forStatus(status);
         Object uri = request.getAttribute(RequestDispatcher.ERROR_REQUEST_URI);
-        String message = status.is5xxServerError() ? "Unexpected error" : status.getReasonPhrase();
+        String message = switch (code) {
+            case INTERNAL_ERROR -> "Unexpected error";
+            case SERVICE_UNAVAILABLE -> "Temporarily unavailable, please retry";
+            default -> status.getReasonPhrase();
+        };
         return ResponseEntity.status(status).contentType(MediaType.APPLICATION_JSON)
                 .body(ApiError.of(status.value(), code.name(), message, uri instanceof String s ? s : "", null));
     }

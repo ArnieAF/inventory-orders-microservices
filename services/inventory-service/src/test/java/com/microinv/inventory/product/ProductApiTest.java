@@ -144,6 +144,7 @@ class ProductApiTest extends AbstractIntegrationTest {
                         "price"),
                 Arguments.of("stock ausente", body(q + "S" + q, q + "N" + q, null, "1", null, null), "stock"),
                 Arguments.of("stock negativo", body(q + "S" + q, q + "N" + q, null, "1", "-1", null), "stock"),
+                Arguments.of("stock > 1e9", body(q + "S" + q, q + "N" + q, null, "1", "1000000001", null), "stock"),
                 Arguments.of("umbral negativo", body(q + "S" + q, q + "N" + q, null, "1", "1", "-1"),
                         "lowStockThreshold"));
     }
@@ -324,12 +325,57 @@ class ProductApiTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void adjustmentRejectsOverflowBeyondIntegerRange() throws Exception {
-        UUID id = createViaApi("ADJ-3", "Grande", "1.00", Integer.MAX_VALUE, 1);
+    void stockUpToOneBillionIsAcceptedAndBeyondIsRejected() throws Exception {
+        mvc.perform(json(post("/api/products"), body("\"BIG-OK\"", "\"N\"", null, "1", "1000000000", null)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.stock").value(1_000_000_000));
+        mvc.perform(json(post("/api/products"), body("\"BIG-KO\"", "\"N\"", null, "1", "1000000001", null)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.details[*].field").value(hasItem("stock")));
+        mvc.perform(json(post("/api/products"), body("\"BIG-INT\"", "\"N\"", null, "1", "2147483647", null)))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void adjustmentThatWouldExceedOneBillionUnitsIs400() throws Exception {
+        UUID id = createViaApi("ADJ-3", "Grande", "1.00", 1_000_000_000, 1);
         mvc.perform(json(post("/api/products/" + id + "/stock-adjustments"), "{\"delta\":1,\"reason\":\"x\"}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
-        assertThat(stockOf(id)).isEqualTo(Integer.MAX_VALUE);
+        mvc.perform(json(post("/api/products/" + id + "/stock-adjustments"),
+                        "{\"delta\":1000000000,\"reason\":\"x\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+        assertThat(stockOf(id)).isEqualTo(1_000_000_000);
+    }
+
+    @Test
+    void deltaLimitsAreEnforcedAndNeverOverflow() throws Exception {
+        UUID id = createViaApi("ADJ-4", "Limites", "1.00", 5, 1);
+        // Integer.MIN_VALUE: -delta desbordaria y "requested" saldria negativo; ahora es 400 sin tocar nada.
+        for (String delta : new String[] {"-2147483648", "2147483647", "-1000000001", "1000000001"}) {
+            mvc.perform(json(post("/api/products/" + id + "/stock-adjustments"),
+                            "{\"delta\":" + delta + ",\"reason\":\"x\"}"))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
+                    .andExpect(jsonPath("$.details[*].field").value(hasItem("delta")));
+        }
+        assertThat(stockOf(id)).isEqualTo(5);
+        assertThat(countAllMovements()).isZero();
+
+        // En el borde (|delta| = 1e9) es valido: negativo, devuelve INSUFFICIENT_STOCK con "requested" positivo.
+        mvc.perform(json(post("/api/products/" + id + "/stock-adjustments"),
+                        "{\"delta\":-1000000000,\"reason\":\"x\"}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("INSUFFICIENT_STOCK"))
+                .andExpect(jsonPath("$.details[0].requested").value(1_000_000_000))
+                .andExpect(jsonPath("$.details[0].available").value(5));
+        // y positivo hasta el tope del stock
+        mvc.perform(json(post("/api/products/" + id + "/stock-adjustments"),
+                        "{\"delta\":999999995,\"reason\":\"x\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.stock").value(1_000_000_000));
     }
 
     @ParameterizedTest(name = "{0}")

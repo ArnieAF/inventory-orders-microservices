@@ -87,7 +87,7 @@ class AppPropertiesTest {
 
     @Test
     void startupFailsWithAClearMessageWhenTheSecretIsShort() {
-        runner.withPropertyValues("app.jwt.secret=too-short-secret-0123456789",  // 26 caracteres
+        runner.withPropertyValues("app.jwt.secret=too-short-secret-0123456789",
                         "app.internal-api-key=k", "app.websocket.allowed-origins=http://localhost:3000")
                 .run(context -> {
                     assertThat(context).hasFailed();

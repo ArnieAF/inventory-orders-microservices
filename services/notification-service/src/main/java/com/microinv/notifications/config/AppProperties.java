@@ -46,18 +46,18 @@ public class AppProperties implements InitializingBean {
         validate();
     }
 
-    /** Valida la configuración; lanza {@link IllegalStateException} con un mensaje claro (sin valores). */
+    /** Valida la configuración; lanza {@link ConfigurationValidationException} con un mensaje claro (sin valores). */
     public void validate() {
         String secret = jwt.getSecret();
         if (secret == null || secret.isBlank() || secret.length() < MIN_JWT_SECRET_LENGTH) {
-            throw new IllegalStateException("JWT_SECRET is missing or too short: it must be set and have at least "
+            throw new ConfigurationValidationException("JWT_SECRET is missing or too short: it must be set and have at least "
                     + MIN_JWT_SECRET_LENGTH + " characters");
         }
         if (jwt.getIssuer() == null || jwt.getIssuer().isBlank()) {
-            throw new IllegalStateException("JWT_ISSUER must not be blank");
+            throw new ConfigurationValidationException("JWT_ISSUER must not be blank");
         }
         if (internalApiKey == null || internalApiKey.isBlank()) {
-            throw new IllegalStateException("INTERNAL_API_KEY is missing: it must be set to a non-empty value");
+            throw new ConfigurationValidationException("INTERNAL_API_KEY is missing: it must be set to a non-empty value");
         }
         websocket.validate();
     }
@@ -119,11 +119,11 @@ public class AppProperties implements InitializingBean {
 
         void validate() {
             if (normalizedAllowedOrigins().isEmpty()) {
-                throw new IllegalStateException(
+                throw new ConfigurationValidationException(
                         "ALLOWED_ORIGINS must list at least one origin (comma separated, e.g. http://localhost:3000)");
             }
             if (connectTimeout == null || connectTimeout.isZero() || connectTimeout.isNegative()) {
-                throw new IllegalStateException("app.websocket.connect-timeout must be a positive duration");
+                throw new ConfigurationValidationException("app.websocket.connect-timeout must be a positive duration");
             }
         }
     }
@@ -136,13 +136,13 @@ public class AppProperties implements InitializingBean {
     public static String normalizeOrigin(String raw) {
         String value = raw.trim();
         if (value.contains("*")) {
-            throw new IllegalStateException("ALLOWED_ORIGINS must not contain wildcards: list explicit origins");
+            throw new ConfigurationValidationException("ALLOWED_ORIGINS must not contain wildcards: list explicit origins");
         }
         URI uri;
         try {
             uri = new URI(value);
         } catch (URISyntaxException ex) {
-            throw new IllegalStateException("ALLOWED_ORIGINS contains an entry that is not a valid origin");
+            throw new ConfigurationValidationException("ALLOWED_ORIGINS contains an entry that is not a valid origin");
         }
         String scheme = uri.getScheme() == null ? null : uri.getScheme().toLowerCase(Locale.ROOT);
         boolean validScheme = "http".equals(scheme) || "https".equals(scheme);
@@ -150,7 +150,7 @@ public class AppProperties implements InitializingBean {
                 || uri.getRawFragment() != null
                 || (uri.getRawPath() != null && !uri.getRawPath().isEmpty() && !"/".equals(uri.getRawPath()));
         if (!validScheme || uri.getHost() == null || hasExtras) {
-            throw new IllegalStateException(
+            throw new ConfigurationValidationException(
                     "ALLOWED_ORIGINS entries must look like http(s)://host[:port] (no path, query or credentials)");
         }
         int port = uri.getPort();

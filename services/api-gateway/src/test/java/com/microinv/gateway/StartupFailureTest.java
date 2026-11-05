@@ -48,6 +48,16 @@ class StartupFailureTest {
     }
 
     @Test
+    void emisorVacio_elArranqueFalla() {
+        SpringApplication app = new SpringApplication(GatewayApplication.class);
+        Throwable failure = catchThrowable(() -> app.run("--server.port=0", "--app.jwt.secret=" + "x".repeat(40),
+                "--app.jwt.issuer=").close());
+        InvalidJwtConfigurationException cause = rootInvalidJwt(failure);
+        assertThat(cause).isNotNull();
+        assertThat(cause.getMessage()).contains("JWT_ISSUER");
+    }
+
+    @Test
     void elDiagnosticoDeArranqueExplicaQueHacer() {
         FailureAnalysis analysis = new InvalidJwtConfigurationFailureAnalyzer()
                 .analyze(new InvalidJwtConfigurationException("JWT_SECRET no esta definido"));

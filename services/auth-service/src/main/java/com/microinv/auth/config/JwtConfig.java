@@ -5,9 +5,11 @@ import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
+import org.springframework.beans.factory.config.BeanFactoryPostProcessor;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.env.Environment;
 import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
 import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.security.oauth2.core.OAuth2TokenValidator;
@@ -28,6 +30,25 @@ public class JwtConfig {
 
     public static final int MIN_SECRET_LENGTH = 32;
     static final int MAX_EXPIRATION_MINUTES = 10_080; // 7 dias
+
+    /**
+     * Valida la configuracion JWT ANTES de crear ningun bean (BeanFactoryPostProcessor): asi un
+     * JWT_SECRET ausente o debil es el primer y unico error visible, aunque la BD tampoco responda.
+     */
+    @Bean
+    static BeanFactoryPostProcessor jwtConfigurationValidator(Environment environment) {
+        return beanFactory -> {
+            String minutes = environment.getProperty("app.jwt.expiration-minutes");
+            int expiration;
+            try {
+                expiration = minutes == null || minutes.isBlank() ? 60 : Integer.parseInt(minutes.trim());
+            } catch (NumberFormatException e) {
+                throw new InvalidJwtConfigurationException("JWT_EXPIRATION_MINUTES debe ser un numero entero.");
+            }
+            buildKey(new JwtProperties(environment.getProperty("app.jwt.secret"),
+                    environment.getProperty("app.jwt.issuer"), expiration));
+        };
+    }
 
     @Bean
     Clock clock() {

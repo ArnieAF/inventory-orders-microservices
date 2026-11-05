@@ -3,9 +3,11 @@ package com.microinv.gateway.config;
 import java.nio.charset.StandardCharsets;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
+import org.springframework.beans.factory.config.BeanFactoryPostProcessor;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.env.Environment;
 import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
 import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.security.oauth2.core.OAuth2TokenValidator;
@@ -23,6 +25,16 @@ import org.springframework.util.StringUtils;
 public class JwtConfig {
 
     public static final int MIN_SECRET_LENGTH = 32;
+
+    /**
+     * Valida la configuracion JWT ANTES de crear ningun bean (BeanFactoryPostProcessor): asi un
+     * JWT_SECRET ausente o debil es el primer error visible del arranque.
+     */
+    @Bean
+    static BeanFactoryPostProcessor jwtConfigurationValidator(Environment environment) {
+        return beanFactory -> buildKey(new JwtProperties(environment.getProperty("app.jwt.secret"),
+                environment.getProperty("app.jwt.issuer")));
+    }
 
     @Bean
     ReactiveJwtDecoder reactiveJwtDecoder(JwtProperties props) {

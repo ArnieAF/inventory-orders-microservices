@@ -58,6 +58,34 @@ class StartupFailureTest {
     }
 
     @Test
+    void sinSecreto_elErrorDeJwtEsElPrimero_aunqueLaBaseDeDatosNoResponda() {
+        SpringApplication app = new SpringApplication(AuthServiceApplication.class);
+        Throwable failure = catchThrowable(() -> app.run(
+                "--server.port=0",
+                "--spring.profiles.active=test",
+                "--spring.datasource.url=jdbc:postgresql://127.0.0.1:1/none",
+                "--spring.datasource.driver-class-name=org.postgresql.Driver",
+                "--spring.datasource.hikari.connection-timeout=1000",
+                "--app.jwt.secret=").close());
+        InvalidJwtConfigurationException cause = rootInvalidJwt(failure);
+        assertThat(cause).as("JWT_SECRET debe fallar antes que Flyway/BD").isNotNull();
+        assertThat(cause.getMessage()).contains("JWT_SECRET");
+    }
+
+    @Test
+    void expiracionNoNumerica_elArranqueFalla_conMensajeClaro() {
+        SpringApplication app = new SpringApplication(AuthServiceApplication.class);
+        Throwable failure = catchThrowable(() -> app.run(
+                "--server.port=0",
+                "--spring.profiles.active=test",
+                "--spring.datasource.url=jdbc:h2:mem:startupfail3;MODE=PostgreSQL;DB_CLOSE_DELAY=-1",
+                "--app.jwt.expiration-minutes=abc").close());
+        InvalidJwtConfigurationException cause = rootInvalidJwt(failure);
+        assertThat(cause).isNotNull();
+        assertThat(cause.getMessage()).contains("JWT_EXPIRATION_MINUTES");
+    }
+
+    @Test
     void elDiagnosticoDeArranqueExplicaQueHacer() {
         InvalidJwtConfigurationException ex = new InvalidJwtConfigurationException("JWT_SECRET no esta definido");
         FailureAnalysis analysis = new InvalidJwtConfigurationFailureAnalyzer().analyze(ex);

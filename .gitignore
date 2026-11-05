@@ -1,0 +1,29 @@
+# Secretos y entorno local
+.env
+.env.*
+!.env.example
+
+# Worktrees de los agentes
+.worktrees/
+
+# Java / Maven
+target/
+*.class
+*.log
+hs_err_pid*
+
+# Node / frontend
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+
+# IDE / SO
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+
+# Herramientas locales
+.claude/

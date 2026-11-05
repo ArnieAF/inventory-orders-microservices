@@ -128,6 +128,10 @@ Reglas de reserva/liberación:
 - **Todo o nada** en una transacción. Bloquear las filas en orden ascendente de `productId` (evita interbloqueos). Prohibido leer-modificar-escribir sin bloqueo o sin actualización condicional (`stock >= q`).
 - **Idempotente por `orderRef`**: reservar dos veces el mismo `orderRef` devuelve el resultado original sin volver a descontar; liberar dos veces (o liberar algo nunca reservado) es no-op con 204. Liberar revierte exactamente lo registrado en `stock_movements`, incluso si el producto está dado de baja.
 - **Stock bajo:** si tras una reserva o un ajuste negativo se cumple `stockAntes > lowStockThreshold && stockDespués <= lowStockThreshold`, enviar notificación `LOW_STOCK` (broadcast) **después del commit**, best-effort.
+- **Cabecera por `orderRef` (añadida tras revisión):** tabla `stock_reservations(order_ref PK, status RESERVED|RELEASED, created_at)`. `reserve` inserta/bloquea la cabecera ANTES de bloquear productos (la PK serializa las peticiones del mismo `orderRef`, aunque los productos sean distintos). `release` de un `orderRef` sin cabecera inserta una **lápida** `RELEASED` y devuelve 204; una `reserve` posterior con ese `orderRef` responde 409 `INVALID_STATUS_TRANSITION`. Así una compensación que llega antes que una reserva lenta no deja stock descontado sin pedido.
+- **Timeouts:** `reserve` y `release` fijan timeout de transacción y de bloqueo de fila **menores que los 5 s de lectura del llamante** (4 s). Si se agotan ⇒ 503 `SERVICE_UNAVAILABLE` con `Retry-After`, para que inventario falle antes de que order-service compense a ciegas. En PostgreSQL con `lock_timeout` (perfil por defecto); los tests H2 usan el equivalente.
+- **Formas fijas de `reserve`:** la respuesta va ordenada por `productId` ascendente (order-service empareja por `productId`, nunca por posición); mismo `orderRef` con ítems distintos ⇒ 400 `VALIDATION_ERROR`; `orderRef` ya liberado ⇒ 409 `INVALID_STATUS_TRANSITION` (con un `orderId` recién generado no debe ocurrir; order-service NO debe propagarlo al cliente: lo trata como 503). `NOT_FOUND` y `PRODUCT_INACTIVE` llevan `details:[{productId, message}]`; `INSUFFICIENT_STOCK`, `details:[{productId, requested, available}]`.
+- **Límites numéricos:** `stock` ≤ 1 000 000 000 y `|delta|` ≤ 1 000 000 000 (evita desbordes de `int`).
 
 ### 6.3 order-service (:8083) — BD `orders`
 Tablas: `orders(id, customer_name, notes, status, total, created_by, created_by_username, created_at, updated_at, version)`, `order_items(id, order_id, product_id, sku, product_name, unit_price, quantity, line_total)` (instantánea del producto al crear: el historial no cambia si el producto cambia).
@@ -161,7 +165,7 @@ Notification = { id, type: "NEW_ORDER"|"LOW_STOCK"|"ORDER_STATUS_CHANGED", title
                  targetUserId: string|null, actorUserId: string|null,
                  entityType: "ORDER"|"PRODUCT", entityId: string, createdAt, read: boolean }
 ```
-`title` ≤ 120, `message` ≤ 500. `targetUserId = null` ⇒ broadcast. `actorUserId` = quien provocó el evento (el frontend no muestra toast de eventos propios).
+`title` ≤ 120, `message` ≤ 500. **Idioma (decisión del orquestador tras revisión): `title` y `message` se escriben en español**, porque el frontend los pinta tal cual (como texto, nunca HTML); los mensajes de error de la API (`message` del §5) siguen en inglés y el frontend los traduce por `code`. No incluir datos personales del cliente: solo número corto de pedido, estado, SKU/nombre de producto. `targetUserId = null` ⇒ broadcast. `actorUserId` = quien provocó el evento (el frontend no muestra toast de eventos propios).
 
 | Método y ruta | Descripción |
 |---|---|
@@ -191,7 +195,7 @@ Notification = { id, type: "NEW_ORDER"|"LOW_STOCK"|"ORDER_STATUS_CHANGED", title
 | `ALLOWED_ORIGINS` (defecto `http://localhost:3000,http://localhost:5173`) | notification |
 | `REGISTRATION_ENABLED` (defecto `true`) | auth |
 
-Los servicios no deben arrancar sin `JWT_SECRET` válido (≥ 32 chars) ni sin `INTERNAL_API_KEY` donde aplique: fallar con mensaje claro, **sin valores por defecto inseguros** en `application.yml`.
+Los servicios no deben arrancar sin `JWT_SECRET` válido (≥ 32 chars) ni sin `INTERNAL_API_KEY` (≥ 16 chars) donde aplique: fallar con mensaje claro, **sin valores por defecto inseguros** en `application.yml`.
 
 ## 9. Healthchecks
 Cada servicio expone `GET /actuator/health` (público, sin detalles) y su imagen define `HEALTHCHECK` con `wget -qO- http://localhost:<puerto>/actuator/health`.

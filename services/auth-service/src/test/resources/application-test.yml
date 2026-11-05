@@ -1,0 +1,14 @@
+# Perfil de pruebas: H2 en modo PostgreSQL + Flyway (sin Postgres ni Docker socket).
+# El secreto es una cadena FALSA solo para tests.
+spring:
+  datasource:
+    url: jdbc:h2:mem:authtest;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH;DB_CLOSE_DELAY=-1
+    username: sa
+    password: ""
+    driver-class-name: org.h2.Driver
+
+app:
+  jwt:
+    secret: test-only-secret-do-not-use-in-prod-0123456789abcdef
+    issuer: micro-inventory
+    expiration-minutes: 60

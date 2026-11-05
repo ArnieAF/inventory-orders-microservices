@@ -20,7 +20,9 @@ Java 17 + Spring Boot, dividido en servicios independientes de **autenticación,
 - Seguridad: gateway valida JWT y cada servicio lo revalida; llamadas internas con `X-Internal-Key` en `/internal/**` que el gateway nunca enruta.
 - Stock consistente: reserva **todo-o-nada, idempotente por `orderRef`** y con filas bloqueadas en orden.
 - Tests con **H2 modo PostgreSQL + Flyway** (sin Testcontainers); Postgres real se verifica en el conjunto con `docker compose`.
-- Repo **solo local** (no hay remoto configurado). `main` queda sin tocar hasta que el usuario pruebe; la integración va a `develop`.
+- Repo remoto **público** creado el 2026-11-05 en `https://github.com/ArnieAF/inventory-orders-microservices` (licencia MIT, **vacío**: todavía no se ha subido nada). El `origin` se añadirá al momento de publicar. Antes del primer push: (1) revisar `git ls-files` y el historial completo en busca de secretos, (2) reescribir el autor de los commits iniciales al correo `noreply` de GitHub (hoy hay commits con el correo personal), con los agentes parados para no romper sus ramas, (3) tener `develop` integrado y verificado.
+- `main` queda sin tocar hasta que el usuario pruebe; la integración va a `develop`. Se sube a GitHub después de la revisión y la prueba de humo, no antes.
+- GitHub Actions / despliegue automático: **no configurado** (fuera del MVP hasta que el usuario lo pida en el chat y diga el destino del despliegue).
 
 ## Alcance
 **MVP (dentro):** registro/login JWT · CRUD de productos con baja lógica y ajuste de stock · crear pedidos con reserva de stock · estados del pedido con transiciones validadas y cancelación que libera stock · notificaciones WebSocket + historial/leídas · panel con resúmenes · todo levantable con `docker compose up`.

@@ -16,6 +16,8 @@ public record AppProperties(
         @DefaultValue Notifications notifications) {
 
     public static final int MIN_JWT_SECRET_LENGTH = 32;
+    /** Contrato, seccion 8: INTERNAL_API_KEY de al menos 16 caracteres. */
+    public static final int MIN_INTERNAL_API_KEY_LENGTH = 16;
 
     public record Jwt(String secret, @DefaultValue("micro-inventory") String issuer) {
         public Jwt {
@@ -31,8 +33,9 @@ public record AppProperties(
 
     public record Internal(String apiKey) {
         public Internal {
-            if (apiKey == null || apiKey.isBlank()) {
-                throw new InvalidConfigurationException("INTERNAL_API_KEY is missing.");
+            if (apiKey == null || apiKey.isBlank() || apiKey.length() < MIN_INTERNAL_API_KEY_LENGTH) {
+                throw new InvalidConfigurationException(
+                        "INTERNAL_API_KEY is missing or shorter than " + MIN_INTERNAL_API_KEY_LENGTH + " characters.");
             }
             if (apiKey.chars().anyMatch(Character::isISOControl)) {
                 throw new InvalidConfigurationException("INTERNAL_API_KEY contains control characters.");

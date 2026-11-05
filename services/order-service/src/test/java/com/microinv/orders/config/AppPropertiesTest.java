@@ -58,11 +58,21 @@ class AppPropertiesTest {
 
     @ParameterizedTest
     @NullAndEmptySource
-    @ValueSource(strings = {"   ", "\t"})
-    void internalApiKeyMissingOrBlankFails(String key) {
+    @ValueSource(strings = {"   ", "\t", "k", "short-key", "0123456789abcde" /* 15 caracteres */,
+            "                " /* 16 espacios */})
+    void internalApiKeyMissingBlankOrShorterThan16Fails(String key) {
         assertThatThrownBy(() -> new AppProperties.Internal(key))
                 .isInstanceOf(InvalidConfigurationException.class)
-                .hasMessageContaining("INTERNAL_API_KEY");
+                .hasMessageContaining("INTERNAL_API_KEY")
+                .hasMessageContaining("16");
+        if (key != null && key.length() >= 5 && !key.isBlank()) { // nunca se imprime el valor recibido
+            assertThatThrownBy(() -> new AppProperties.Internal(key)).hasMessageNotContaining(key);
+        }
+    }
+
+    @Test
+    void internalApiKeyOfExactly16CharactersIsAccepted() {
+        assertThatCode(() -> new AppProperties.Internal("0123456789abcdef")).doesNotThrowAnyException();
     }
 
     @Test
@@ -147,7 +157,7 @@ class AppPropertiesTest {
 
     @Test
     void serviceUrlsAndIssuerComeFromTheEnvironment() {
-        runner().withSystemProperties("JWT_SECRET=" + SECRET_32, "INTERNAL_API_KEY=k",
+        runner().withSystemProperties("JWT_SECRET=" + SECRET_32, "INTERNAL_API_KEY=some-internal-key",
                         "JWT_ISSUER=other-issuer", "INVENTORY_SERVICE_URL=http://inv:9000",
                         "NOTIFICATION_SERVICE_URL=http://notif:9001")
                 .run(context -> {

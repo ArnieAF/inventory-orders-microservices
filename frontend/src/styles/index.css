@@ -1,0 +1,242 @@
+@import 'tailwindcss';
+@import '@fontsource-variable/archivo/wdth.css';
+
+/* Modo oscuro por clase en <html> (la aplica public/theme-init.js antes del primer pintado). */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/*
+  Sistema "albarán": papel frío, tinta azul grisácea y un único acento petróleo.
+  Los colores de estado solo comunican estado (pedido, stock, error), nunca decoran.
+  Radios: controles 8 px (rounded-lg), paneles 12 px (rounded-xl), insignias en píldora.
+*/
+@theme {
+  --color-*: initial;
+  --color-white: oklch(1 0 0);
+
+  --font-sans: 'Archivo Variable', ui-sans-serif, system-ui, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: ui-monospace, 'SFMono-Regular', 'Cascadia Mono', 'Segoe UI Mono', Menlo, Consolas, monospace;
+
+  /* Superficies y tinta (claro) */
+  --color-canvas: oklch(0.968 0.005 235);
+  --color-surface: oklch(0.995 0.002 235);
+  --color-sunken: oklch(0.948 0.006 235);
+  --color-raised: oklch(1 0 0);
+  --color-line: oklch(0.9 0.007 235);
+  --color-line-strong: oklch(0.8 0.01 235);
+  --color-ink: oklch(0.23 0.018 245);
+  --color-ink-2: oklch(0.41 0.017 245);
+  --color-ink-3: oklch(0.5 0.014 245);
+
+  /* Acento petróleo */
+  --color-accent: oklch(0.46 0.085 200);
+  --color-accent-hover: oklch(0.4 0.08 200);
+  --color-accent-ink: oklch(0.99 0.005 200);
+  --color-accent-soft: oklch(0.93 0.03 200);
+  --color-accent-text: oklch(0.42 0.08 200);
+  --color-focus: oklch(0.55 0.11 200);
+
+  /* Estados */
+  --color-danger: oklch(0.52 0.18 27);
+  --color-danger-hover: oklch(0.46 0.17 27);
+  --color-danger-ink: oklch(0.99 0.005 27);
+  --color-danger-soft: oklch(0.95 0.025 27);
+  --color-danger-text: oklch(0.48 0.17 27);
+
+  --color-warn-soft: oklch(0.95 0.055 88);
+  --color-warn-text: oklch(0.46 0.1 65);
+  --color-warn-mark: oklch(0.74 0.15 75);
+
+  --color-info-soft: oklch(0.945 0.03 250);
+  --color-info-text: oklch(0.45 0.13 255);
+  --color-info-mark: oklch(0.6 0.13 255);
+
+  --color-ship-soft: oklch(0.945 0.035 295);
+  --color-ship-text: oklch(0.45 0.15 295);
+  --color-ship-mark: oklch(0.6 0.14 295);
+
+  --color-ok-soft: oklch(0.945 0.045 155);
+  --color-ok-text: oklch(0.44 0.1 155);
+  --color-ok-mark: oklch(0.62 0.13 155);
+
+  --color-mute-soft: oklch(0.94 0.008 245);
+  --color-mute-text: oklch(0.44 0.015 245);
+  --color-mute-mark: oklch(0.66 0.015 245);
+
+  --shadow-pop: 0 18px 40px -12px oklch(0.25 0.03 245 / 0.22), 0 3px 8px -3px oklch(0.25 0.03 245 / 0.14);
+  --shadow-bar: 0 1px 0 oklch(0.25 0.03 245 / 0.06);
+
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-pop-in: pop-in 170ms var(--ease-out-expo);
+  --animate-fade-in: fade-in 160ms ease-out;
+  --animate-toast-in: toast-in 220ms var(--ease-out-expo);
+  --animate-sheet-in: sheet-in 240ms var(--ease-out-expo);
+
+  @keyframes pop-in {
+    from {
+      opacity: 0;
+      transform: translateY(-4px) scale(0.98);
+    }
+  }
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+  }
+  @keyframes toast-in {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+  }
+  @keyframes sheet-in {
+    from {
+      opacity: 0;
+      transform: translateX(24px);
+    }
+  }
+}
+
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+
+  .dark {
+    color-scheme: dark;
+    --color-canvas: oklch(0.175 0.012 245);
+    --color-surface: oklch(0.21 0.013 245);
+    --color-sunken: oklch(0.19 0.012 245);
+    --color-raised: oklch(0.255 0.014 245);
+    --color-line: oklch(0.3 0.013 245);
+    --color-line-strong: oklch(0.4 0.015 245);
+    --color-ink: oklch(0.95 0.006 245);
+    --color-ink-2: oklch(0.79 0.012 245);
+    --color-ink-3: oklch(0.69 0.012 245);
+
+    --color-accent: oklch(0.78 0.095 195);
+    --color-accent-hover: oklch(0.84 0.085 195);
+    --color-accent-ink: oklch(0.2 0.03 220);
+    --color-accent-soft: oklch(0.32 0.05 200);
+    --color-accent-text: oklch(0.82 0.09 195);
+    --color-focus: oklch(0.8 0.1 195);
+
+    --color-danger: oklch(0.7 0.16 25);
+    --color-danger-hover: oklch(0.76 0.14 25);
+    --color-danger-ink: oklch(0.2 0.04 25);
+    --color-danger-soft: oklch(0.3 0.07 25);
+    --color-danger-text: oklch(0.8 0.12 25);
+
+    --color-warn-soft: oklch(0.31 0.06 75);
+    --color-warn-text: oklch(0.87 0.12 85);
+    --color-warn-mark: oklch(0.8 0.14 80);
+
+    --color-info-soft: oklch(0.3 0.06 255);
+    --color-info-text: oklch(0.85 0.08 255);
+    --color-info-mark: oklch(0.72 0.12 255);
+
+    --color-ship-soft: oklch(0.3 0.07 295);
+    --color-ship-text: oklch(0.85 0.08 295);
+    --color-ship-mark: oklch(0.72 0.13 295);
+
+    --color-ok-soft: oklch(0.29 0.05 155);
+    --color-ok-text: oklch(0.85 0.1 155);
+    --color-ok-mark: oklch(0.72 0.13 155);
+
+    --color-mute-soft: oklch(0.27 0.012 245);
+    --color-mute-text: oklch(0.8 0.012 245);
+    --color-mute-mark: oklch(0.55 0.012 245);
+
+    --shadow-pop: 0 20px 44px -12px oklch(0 0 0 / 0.6), 0 3px 10px -3px oklch(0 0 0 / 0.45);
+    --shadow-bar: 0 1px 0 oklch(0 0 0 / 0.35);
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+    scrollbar-color: var(--color-line-strong) transparent;
+    scrollbar-gutter: stable;
+  }
+
+  /* Con un diálogo modal abierto, el fondo no se desplaza. */
+  html:has(dialog[open]) {
+    overflow: hidden;
+  }
+
+  body {
+    min-height: 100dvh;
+    background-color: var(--color-canvas);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    font-optical-sizing: auto;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  ::selection {
+    background-color: var(--color-accent-soft);
+    color: var(--color-ink);
+  }
+
+  input,
+  textarea {
+    caret-color: var(--color-accent);
+  }
+
+  input[type='checkbox'],
+  input[type='radio'] {
+    accent-color: var(--color-accent);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 2px;
+  }
+
+  /* Destinos de foco programático (títulos de página): no son interactivos. */
+  [data-focus-target]:focus {
+    outline: none;
+  }
+
+  a {
+    text-underline-offset: 0.2em;
+  }
+
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    ::before,
+    ::after {
+      animation-duration: 1ms !important;
+      animation-iteration-count: 1 !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer components {
+  /* Voz de "etiqueta de almacén" para títulos: Archivo semiexpandida. */
+  .title-label {
+    font-stretch: 112.5%;
+    letter-spacing: -0.015em;
+    font-weight: 650;
+  }
+
+  /* Códigos (SKU, número de pedido): monoespaciada porque son datos que se comparan carácter a carácter. */
+  .code {
+    font-family: var(--font-mono);
+    font-size: 0.92em;
+    letter-spacing: 0;
+    overflow-wrap: anywhere;
+  }
+
+  /* Total contable: doble filete bajo el importe, como en un albarán. */
+  .ledger-total {
+    border-bottom: 3px double var(--color-ink);
+  }
+}

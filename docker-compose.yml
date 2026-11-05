@@ -1,0 +1,200 @@
+name: micro-inventory
+
+# Valores reales solo en .env (no versionado). Plantilla: .env.example.
+# Generar .env con: scripts/init-env.ps1 (Windows) o scripts/init-env.sh (Git Bash / Linux / macOS).
+
+x-java-service: &java-service
+  restart: unless-stopped
+  networks:
+    - backend
+  security_opt:
+    - no-new-privileges:true
+
+services:
+  # ---------------------------------------------------------------------------
+  # Bases de datos (una por servicio, sin puertos publicados)
+  # ---------------------------------------------------------------------------
+  auth-db:
+    image: postgres:16-alpine
+    networks:
+      - backend
+    environment:
+      POSTGRES_DB: auth
+      POSTGRES_USER: auth
+      POSTGRES_PASSWORD: ${AUTH_DB_PASSWORD:?Define AUTH_DB_PASSWORD en .env}
+    volumes:
+      - auth-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "auth", "-d", "auth"]
+      interval: 5s
+      retries: 10
+
+  inventory-db:
+    image: postgres:16-alpine
+    networks:
+      - backend
+    environment:
+      POSTGRES_DB: inventory
+      POSTGRES_USER: inventory
+      POSTGRES_PASSWORD: ${INVENTORY_DB_PASSWORD:?Define INVENTORY_DB_PASSWORD en .env}
+    volumes:
+      - inventory-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "inventory", "-d", "inventory"]
+      interval: 5s
+      retries: 10
+
+  order-db:
+    image: postgres:16-alpine
+    networks:
+      - backend
+    environment:
+      POSTGRES_DB: orders
+      POSTGRES_USER: orders
+      POSTGRES_PASSWORD: ${ORDER_DB_PASSWORD:?Define ORDER_DB_PASSWORD en .env}
+    volumes:
+      - order-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "orders", "-d", "orders"]
+      interval: 5s
+      retries: 10
+
+  notification-db:
+    image: postgres:16-alpine
+    networks:
+      - backend
+    environment:
+      POSTGRES_DB: notifications
+      POSTGRES_USER: notifications
+      POSTGRES_PASSWORD: ${NOTIFICATION_DB_PASSWORD:?Define NOTIFICATION_DB_PASSWORD en .env}
+    volumes:
+      - notification-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "notifications", "-d", "notifications"]
+      interval: 5s
+      retries: 10
+
+  # ---------------------------------------------------------------------------
+  # Servicios Java (HEALTHCHECK definido en el Dockerfile de cada servicio)
+  # ---------------------------------------------------------------------------
+  auth-service:
+    <<: *java-service
+    build: ./services/auth-service
+    networks:
+      - backend
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://auth-db:5432/auth
+      SPRING_DATASOURCE_USERNAME: auth
+      SPRING_DATASOURCE_PASSWORD: ${AUTH_DB_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET:?Define JWT_SECRET en .env}
+      JWT_ISSUER: ${JWT_ISSUER:-micro-inventory}
+      JWT_EXPIRATION_MINUTES: ${JWT_EXPIRATION_MINUTES:-60}
+      REGISTRATION_ENABLED: ${REGISTRATION_ENABLED:-true}
+    depends_on:
+      auth-db:
+        condition: service_healthy
+
+  inventory-service:
+    <<: *java-service
+    build: ./services/inventory-service
+    networks:
+      - backend
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://inventory-db:5432/inventory
+      SPRING_DATASOURCE_USERNAME: inventory
+      SPRING_DATASOURCE_PASSWORD: ${INVENTORY_DB_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET:?Define JWT_SECRET en .env}
+      JWT_ISSUER: ${JWT_ISSUER:-micro-inventory}
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:?Define INTERNAL_API_KEY en .env}
+      NOTIFICATION_SERVICE_URL: http://notification-service:8084
+    depends_on:
+      inventory-db:
+        condition: service_healthy
+
+  order-service:
+    <<: *java-service
+    build: ./services/order-service
+    networks:
+      - backend
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://order-db:5432/orders
+      SPRING_DATASOURCE_USERNAME: orders
+      SPRING_DATASOURCE_PASSWORD: ${ORDER_DB_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET:?Define JWT_SECRET en .env}
+      JWT_ISSUER: ${JWT_ISSUER:-micro-inventory}
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:?Define INTERNAL_API_KEY en .env}
+      INVENTORY_SERVICE_URL: http://inventory-service:8082
+      NOTIFICATION_SERVICE_URL: http://notification-service:8084
+    depends_on:
+      order-db:
+        condition: service_healthy
+      inventory-service:
+        condition: service_healthy
+
+  notification-service:
+    <<: *java-service
+    build: ./services/notification-service
+    networks:
+      - backend
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://notification-db:5432/notifications
+      SPRING_DATASOURCE_USERNAME: notifications
+      SPRING_DATASOURCE_PASSWORD: ${NOTIFICATION_DB_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET:?Define JWT_SECRET en .env}
+      JWT_ISSUER: ${JWT_ISSUER:-micro-inventory}
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:?Define INTERNAL_API_KEY en .env}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:5173}
+    depends_on:
+      notification-db:
+        condition: service_healthy
+
+  api-gateway:
+    <<: *java-service
+    build: ./services/api-gateway
+    networks:
+      - backend
+    environment:
+      JWT_SECRET: ${JWT_SECRET:?Define JWT_SECRET en .env}
+      JWT_ISSUER: ${JWT_ISSUER:-micro-inventory}
+      ROUTE_AUTH_URI: http://auth-service:8081
+      ROUTE_INVENTORY_URI: http://inventory-service:8082
+      ROUTE_ORDER_URI: http://order-service:8083
+      ROUTE_NOTIFICATION_URI: http://notification-service:8084
+      ROUTE_NOTIFICATION_WS_URI: ws://notification-service:8084
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      auth-service:
+        condition: service_healthy
+      inventory-service:
+        condition: service_healthy
+      order-service:
+        condition: service_healthy
+      notification-service:
+        condition: service_healthy
+
+  # ---------------------------------------------------------------------------
+  # Frontend (nginx sin privilegios)
+  # ---------------------------------------------------------------------------
+  frontend:
+    restart: unless-stopped
+    networks:
+      - backend
+    security_opt:
+      - no-new-privileges:true
+    build: ./frontend
+    ports:
+      - "127.0.0.1:3000:8080"
+    depends_on:
+      api-gateway:
+        condition: service_healthy
+
+volumes:
+  auth-db-data:
+  inventory-db-data:
+  order-db-data:
+  notification-db-data:
+
+networks:
+  backend:
+    driver: bridge

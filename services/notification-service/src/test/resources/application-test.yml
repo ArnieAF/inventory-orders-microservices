@@ -1,0 +1,12 @@
+# Perfil de pruebas: H2 en memoria en modo PostgreSQL + Flyway (sin Docker socket ni Testcontainers).
+# Cada contexto de Spring usa una base distinta (nombre aleatorio) para que no se mezclen datos.
+spring:
+  datasource:
+    url: jdbc:h2:mem:notif-${random.uuid};MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH;DB_CLOSE_DELAY=-1
+    username: sa
+    password: ""
+    driver-class-name: org.h2.Driver
+
+logging:
+  level:
+    com.microinv.notifications: DEBUG

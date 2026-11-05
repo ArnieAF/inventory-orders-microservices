@@ -1,0 +1,3 @@
+# Validación temprana de la configuración y presentación clara de sus errores
+org.springframework.context.ApplicationListener=com.microinv.notifications.config.StartupValidationListener
+org.springframework.boot.diagnostics.FailureAnalyzer=com.microinv.notifications.config.ConfigurationValidationFailureAnalyzer
